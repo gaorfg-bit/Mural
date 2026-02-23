@@ -87,6 +87,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._preview_timeout_id: Optional[int] = None
         self._bookmark_action_names: list[str] = []  # D3 — tracking explicite des actions bookmarks
         self._save_timeout_id: Optional[int] = None  # D5 — debounce config save
+        self._resize_reload_id: Optional[int] = None
         self._pending_batches: int = 0
         self._pending_batches_lock = threading.Lock()
         self.folder = (
@@ -1431,8 +1432,20 @@ class WallpaperApp(Adw.ApplicationWindow):
             self.flowbox.set_max_children_per_line(cols)
             # Recharger seulement si la différence est significative
             if abs(thumb_w - prev_thumb_w) > 20:
-                GLib.idle_add(self._load_gallery)
+                self._schedule_gallery_reload()
 
+        return False
+
+    def _schedule_gallery_reload(self) -> None:
+        if self._resize_reload_id is not None:
+            GLib.source_remove(self._resize_reload_id)
+        self._resize_reload_id = GLib.timeout_add(
+            200, self._on_gallery_reload_timeout
+        )
+
+    def _on_gallery_reload_timeout(self) -> bool:
+        self._resize_reload_id = None
+        self._load_gallery()
         return False
 
     def _schedule_flowbox_column_update(self) -> None:
@@ -1916,22 +1929,24 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         paintable = None
         source_path = thumb_path if thumb_path and thumb_path.exists() else fpath
-        if source_path and Path(source_path).exists():
-            try:
-                texture = Gdk.Texture.new_from_file(
-                    Gio.File.new_for_path(str(source_path))
-                )
-                paintable = Gtk.Picture.new_for_paintable(texture)
-                paintable.set_can_shrink(True)
-                paintable.set_content_fit(Gtk.ContentFit.COVER)
-                paintable.set_size_request(Config.THUMB_W, Config.THUMB_H)
-            except Exception:
-                paintable = None
-        if not paintable:
-            paintable = Gtk.Image.new_from_icon_name("image-missing")
-            paintable.set_size_request(Config.THUMB_W, Config.THUMB_H)
+        placeholder = Gtk.Image.new_from_icon_name("image-missing")
+        placeholder.set_size_request(Config.THUMB_W, Config.THUMB_H)
+        picture = Gtk.Picture()
+        picture.set_can_shrink(True)
+        picture.set_content_fit(Gtk.ContentFit.COVER)
+        picture.set_size_request(Config.THUMB_W, Config.THUMB_H)
+
+        def _on_texture_loaded(texture: Optional[Gdk.Texture]) -> None:
+            if overlay.get_parent() is None:
+                return
+            if texture is None:
+                overlay.set_child(placeholder)
+                return
+            picture.set_paintable(texture)
+            overlay.set_child(picture)
+
         overlay = Gtk.Overlay()
-        overlay.set_child(paintable)
+        overlay.set_child(placeholder)
         overlay.update_property(
             [Gtk.AccessibleProperty.LABEL],
             [f"Aperçu de {Path(fpath).name}"]
@@ -1964,6 +1979,9 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         box.append(overlay)
 
+        if source_path and Path(source_path).exists():
+            self._load_texture_async(str(source_path), _on_texture_loaded)
+
         self._thumb_views[str(fpath)] = (box, indicator, slideshow_indicator)
         # Ne pas appeler _refresh_active_indicators ici — trop coûteux sur 500 images.
         # L'indicateur est initialisé directement selon l'état courant.
@@ -1977,6 +1995,23 @@ class WallpaperApp(Adw.ApplicationWindow):
         if fb_child is not None:
             self._child_to_path[fb_child] = str(fpath)
         return False
+
+    def _load_texture_async(self, path: str, on_done) -> None:
+        gfile = Gio.File.new_for_path(path)
+
+        def _finish(file_obj, result):
+            try:
+                data = file_obj.load_bytes_finish(result)
+                gbytes = data[0] if isinstance(data, tuple) else data
+                texture = Gdk.Texture.new_from_bytes(gbytes)
+            except Exception:
+                texture = None
+            on_done(texture)
+
+        try:
+            gfile.load_bytes_async(None, _finish)
+        except Exception:
+            on_done(None)
 
     def _gallery_done(self, total):
         self._set_progress_visibility(False)
