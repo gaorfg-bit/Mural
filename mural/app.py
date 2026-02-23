@@ -7,11 +7,6 @@ import threading
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-try:
-    import pillow_avif
-except ImportError:
-    pass
-
 from PIL import Image
 from PIL import ImageFile
 
@@ -24,7 +19,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 
 from .backend import GnomeBackend
-from .avif_cache import FolderConverter, get_cached_avif, AVIF_SUPPORTED, avif_path_for
+from .avif_cache import FolderConverter, get_cached_avif, AVIF_SUPPORTED
 from .config import Config
 from .daemon import MuralDaemonProxy
 from .monitors import MonitorDetector
@@ -89,7 +84,6 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._selected_child: Optional[Gtk.FlowBoxChild] = None
         self._search_text: str = ""
         self._context_path: Optional[str] = None
-        self._selection_placeholder = "Aucune sélection"
         self._preview_timeout_id: Optional[int] = None
         self._bookmark_action_names: list[str] = []  # D3 — tracking explicite des actions bookmarks
         self._save_timeout_id: Optional[int] = None  # D5 — debounce config save
@@ -110,8 +104,10 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         self._build_ui()
         self._ensure_slideshow_css()
-        w = self.settings.window_width or 1280
-        h = self.settings.window_height or 800
+        # Restaurer la taille sauvegardée mais plafonner à 1400×900
+        # pour éviter de remplir un écran ultra-wide au premier lancement
+        w = min(self.settings.window_width or 1100, 1400)
+        h = min(self.settings.window_height or 700, 900)
         self.set_default_size(w, h)
         self.connect("close-request", self._on_close_request)
         self._schedule_flowbox_column_update()
@@ -134,7 +130,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         # === HeaderBar ===
         hb = Gtk.HeaderBar()
         hb.set_show_title_buttons(True)
-        self.set_decorated(True)  # assure que les boutons de fenêtre sont visibles
+        self.set_decorated(True)
         n_mon = len(self.monitors)
         self._title_widget = Adw.WindowTitle(
             title="Mural",
@@ -146,15 +142,12 @@ class WallpaperApp(Adw.ApplicationWindow):
         hb.set_title_widget(self._title_widget)
         self._ensure_menu_actions()
         self._ensure_thumb_menu()
-        # Title bar is managed by ToolbarView
 
-        # Boutons gauche
         btn_folder = Gtk.Button()
         btn_folder.set_child(Gtk.Image.new_from_icon_name("folder-open-symbolic"))
         btn_folder.set_tooltip_text("Choisir un dossier")
         btn_folder.connect("clicked", self._on_choose_folder)
 
-        # G3 — Toggle SearchBar (remplace le SearchEntry direct dans la HeaderBar)
         self._search_toggle = Gtk.ToggleButton()
         self._search_toggle.set_icon_name("system-search-symbolic")
         self._search_toggle.set_tooltip_text("Rechercher (Ctrl+F)")
@@ -162,14 +155,12 @@ class WallpaperApp(Adw.ApplicationWindow):
         hb.pack_start(btn_folder)
         hb.pack_start(self._search_toggle)
 
-        # Bouton appliquer (droite)
         self.btn_apply = Gtk.Button(label="Définir comme fond")
         self.btn_apply.add_css_class("suggested-action")
         self.btn_apply.set_sensitive(False)
         self.btn_apply.connect("clicked", self._on_apply)
         hb.pack_end(self.btn_apply)
 
-        # G1 — Menu hamburger (refresh, cache, à propos)
         app_menu = Gio.Menu()
         app_menu.append("Rafraîchir la galerie", "win.refresh")
         app_menu.append("Vider le cache", "win.clear_cache")
@@ -182,39 +173,58 @@ class WallpaperApp(Adw.ApplicationWindow):
         menu_btn.set_tooltip_text("Menu principal")
         hb.pack_end(menu_btn)
 
+        self._sidebar_toggle = Gtk.ToggleButton()
+        self._sidebar_toggle.set_icon_name("sidebar-show-right-symbolic")
+        self._sidebar_toggle.set_active(True)
+        self._sidebar_toggle.set_tooltip_text("Afficher/masquer le panneau (Ctrl+B)")
+        self._sidebar_toggle.connect("toggled", self._on_sidebar_toggle)
+        hb.pack_end(self._sidebar_toggle)
+
+        # === Layout racine ===
         root_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         root_box.set_hexpand(True)
         root_box.set_vexpand(True)
         toolbar_view = Adw.ToolbarView()
         toolbar_view.add_top_bar(hb)
-        # G2 — ToastOverlay pour les notifications d'action non-intrusives
         self._toast_overlay = Adw.ToastOverlay()
         self._toast_overlay.set_child(root_box)
         toolbar_view.set_content(self._toast_overlay)
         self.set_content(toolbar_view)
-        # Taille par défaut — doit être après set_content()
-        self.set_default_size(1280, 800)
-        # Restaurer l'état maximisé si sauvegardé
         if getattr(self.settings, 'window_maximized', False):
             self.maximize()
 
-        # ─── Layout principal : Paned vertical (preview | galerie) ───
+        # === Zone gauche : galerie ===
         main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         main_vbox.set_hexpand(True)
         main_vbox.set_vexpand(True)
-        main_vbox.set_size_request(400, -1)
+        main_vbox.set_size_request(200, -1)
 
+        # SearchBar
+        search_bar = Gtk.SearchBar()
+        search_bar.set_search_mode(False)
+        search_bar.set_show_close_button(True)
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("Rechercher…")
+        self.search_entry.connect("search-changed", self._on_search_changed)
+        search_bar.set_child(self.search_entry)
+        search_bar.connect_entry(self.search_entry)
+        self._search_toggle.bind_property(
+            "active", search_bar, "search-mode-enabled",
+            GObject.BindingFlags.BIDIRECTIONAL
+        )
+        main_vbox.append(search_bar)
+
+        # Paned vertical preview / galerie
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
         paned.set_hexpand(True)
         paned.set_vexpand(True)
         paned.set_wide_handle(False)
 
-        # ── Panneau haut : Preview (hauteur fixe) ──
+        # Preview
         preview_frame = Gtk.Frame()
         preview_frame.add_css_class("preview-area")
         preview_frame.set_hexpand(True)
         preview_frame.set_vexpand(True)
-
         self.preview = Gtk.Picture()
         self.preview.set_content_fit(Gtk.ContentFit.CONTAIN)
         self.preview.set_can_shrink(True)
@@ -222,41 +232,34 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.preview.set_vexpand(True)
         self.preview.set_halign(Gtk.Align.FILL)
         self.preview.set_valign(Gtk.Align.FILL)
-
         self._preview_placeholder_label = Gtk.Label(label="Sélectionnez une image")
         self._preview_placeholder_label.add_css_class("dim-label")
         self._preview_placeholder_label.set_halign(Gtk.Align.CENTER)
         self._preview_placeholder_label.set_valign(Gtk.Align.CENTER)
-
         preview_overlay = Gtk.Overlay()
         preview_overlay.set_child(self.preview)
         preview_overlay.add_overlay(self._preview_placeholder_label)
         preview_overlay.set_hexpand(True)
         preview_overlay.set_vexpand(True)
-
         preview_top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         preview_top.set_margin_start(12)
         preview_top.set_margin_end(12)
         preview_top.set_margin_top(12)
         preview_top.set_margin_bottom(4)
-        preview_top.append(preview_frame)
-
-        preview_top.set_vexpand(True)
         preview_frame.set_size_request(-1, Config.PREVIEW_MAX_HEIGHT)
         preview_frame.set_vexpand(True)
         preview_frame.set_hexpand(True)
         preview_frame.set_child(preview_overlay)
-
+        preview_top.append(preview_frame)
         paned.set_start_child(preview_top)
-        paned.set_resize_start_child(True)   # la preview peut grandir au resize
+        paned.set_resize_start_child(True)
         paned.set_shrink_start_child(False)
         paned.set_position(Config.PREVIEW_MAX_HEIGHT + 24)
 
-        # ── Panneau bas : progressbar + galerie ──
+        # Galerie + progressbar
         bottom_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         bottom_box.set_hexpand(True)
         bottom_box.set_vexpand(True)
-
         self._gallery_progressbar = Gtk.ProgressBar()
         self._gallery_progressbar.set_visible(False)
         self._gallery_progressbar.set_hexpand(True)
@@ -264,7 +267,6 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._gallery_progressbar.set_margin_end(12)
         self._gallery_progressbar.set_margin_top(4)
         self._gallery_progressbar.set_margin_bottom(2)
-
         self._progress_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self._progress_container.set_hexpand(True)
         self._progress_container.set_vexpand(False)
@@ -275,16 +277,14 @@ class WallpaperApp(Adw.ApplicationWindow):
         gallery_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         gallery_box.set_margin_start(12)
         gallery_box.set_margin_end(12)
-        gallery_box.set_margin_bottom(12)
+        gallery_box.set_margin_bottom(0)
         gallery_box.set_hexpand(True)
         gallery_box.set_vexpand(True)
-
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_hexpand(True)
         scroll.set_vexpand(True)
         self._scroll = scroll
-
         self.flowbox = Gtk.FlowBox()
         self.flowbox.set_valign(Gtk.Align.START)
         self.flowbox.set_hexpand(True)
@@ -300,206 +300,202 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.flowbox.set_margin_top(12)
         self.flowbox.set_margin_bottom(12)
         self.flowbox.connect("child-activated", self._on_gallery_click)
-        self.flowbox.connect(
-            "selected-children-changed",
-            self._on_flowbox_selection_changed,
-        )
-        self.flowbox.connect(
-            "notify::allocation",
-            lambda *_: self._schedule_flowbox_column_update(),
-        )
+        self.flowbox.connect("selected-children-changed", self._on_flowbox_selection_changed)
+        self.flowbox.connect("notify::allocation", lambda *_: self._schedule_flowbox_column_update())
         self.flowbox.set_filter_func(self._flowbox_filter)
-
         scroll.set_child(self.flowbox)
         gallery_box.append(scroll)
-
-        self.status_label = Gtk.Label()
-        self.status_label.set_xalign(0)
-        self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.status_label.set_max_width_chars(80)
-        self.status_label.add_css_class("dim-label")
-        gallery_box.append(self.status_label)
-
         bottom_box.append(gallery_box)
-
         paned.set_end_child(bottom_box)
         paned.set_resize_end_child(True)
         paned.set_shrink_end_child(False)
-
-        # G3 — SearchBar activée par Ctrl+F (hors HeaderBar, pattern GNOME HIG)
-        search_bar = Gtk.SearchBar()
-        search_bar.set_search_mode(False)
-        search_bar.set_show_close_button(True)
-        self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_placeholder_text("Rechercher…")
-        self.search_entry.connect("search-changed", self._on_search_changed)
-        search_bar.set_child(self.search_entry)
-        search_bar.connect_entry(self.search_entry)
-        self._search_toggle.bind_property(
-            "active", search_bar, "search-mode-enabled",
-            GObject.BindingFlags.BIDIRECTIONAL
-        )
-        main_vbox.append(search_bar)
         main_vbox.append(paned)
+
+        # Statusbar — info image toujours visible en bas
+        statusbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        statusbar.set_margin_start(14)
+        statusbar.set_margin_end(14)
+        statusbar.set_margin_top(4)
+        statusbar.set_margin_bottom(5)
+        statusbar.add_css_class("dim-label")
+        self.status_label = Gtk.Label()
+        self.status_label.set_xalign(0)
+        self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.status_label.set_hexpand(True)
+        self.status_label.set_max_width_chars(80)
+        statusbar.append(self.status_label)
+        # Info image inline dans la statusbar
+        self._sb_sep1 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        self._sb_sep1.set_margin_top(4)
+        self._sb_sep1.set_margin_bottom(4)
+        self._sb_sep1.set_visible(False)
+        statusbar.append(self._sb_sep1)
+        self.lbl_name = Gtk.Label()
+        self.lbl_name.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        self.lbl_name.set_max_width_chars(30)
+        self.lbl_name.set_selectable(True)
+        self.lbl_name.set_visible(False)
+        statusbar.append(self.lbl_name)
+        self._sb_sep2 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        self._sb_sep2.set_margin_top(4)
+        self._sb_sep2.set_margin_bottom(4)
+        self._sb_sep2.set_visible(False)
+        statusbar.append(self._sb_sep2)
+        self.lbl_dims = Gtk.Label()
+        self.lbl_dims.set_visible(False)
+        statusbar.append(self.lbl_dims)
+        self._sb_sep3 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        self._sb_sep3.set_margin_top(4)
+        self._sb_sep3.set_margin_bottom(4)
+        self._sb_sep3.set_visible(False)
+        statusbar.append(self._sb_sep3)
+        self.lbl_size = Gtk.Label()
+        self.lbl_size.set_visible(False)
+        statusbar.append(self.lbl_size)
+        # Séparateur visuel au-dessus de la statusbar
+        sb_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        main_vbox.append(sb_sep)
+        main_vbox.append(statusbar)
+
         root_box.append(main_vbox)
 
-        # ─── Sidebar ───
-        clamp = Adw.Clamp()
-        clamp.set_maximum_size(420)
-        clamp.set_hexpand(False)
-        clamp.set_vexpand(True)
-        clamp.set_margin_start(8)
-        clamp.set_margin_end(12)
-        clamp.set_margin_top(8)
-        clamp.set_margin_bottom(8)
-        clamp.set_size_request(320, -1)  # largeur minimale — empêche la sidebar de se réduire
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        right.set_margin_start(4)
-        right.set_margin_end(4)
-        right.set_margin_top(2)
-        right.set_margin_bottom(2)
-        clamp_scroll = Gtk.ScrolledWindow()
-        clamp_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        clamp_scroll.set_child(right)
-        clamp.set_child(clamp_scroll)
+        # ═══════════════════════════════════════════════
+        # SIDEBAR — 4 onglets
+        # ═══════════════════════════════════════════════
+        self._sidebar_sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        root_box.append(self._sidebar_sep)
 
-        group_display = Adw.PreferencesGroup(title="Affichage")
-        group_screens = Adw.PreferencesGroup(title="Écrans")
-        group_image = Adw.PreferencesGroup(title="Image")
+        self._sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self._sidebar.set_size_request(280, -1)
+        self._sidebar.set_vexpand(True)
 
-        group_screens.set_margin_bottom(6)
-        group_display.set_margin_bottom(6)
-        group_image.set_margin_bottom(6)
+        sidebar = self._sidebar
+
+        # Barre d'onglets
+        tab_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        tab_bar.add_css_class("linked")
+        tab_bar.set_margin_start(10)
+        tab_bar.set_margin_end(10)
+        tab_bar.set_margin_top(8)
+        tab_bar.set_margin_bottom(8)
+
+        self._tab_pages = {}
+        self._tab_btns = {}
+        tabs = [
+            ("display",   "Affichage"),
+            ("slideshow", "Slideshow"),
+            ("folders",   "Dossiers"),
+            ("avif",      "AVIF"),
+        ]
+        first_btn = None
+        for tab_id, tab_label in tabs:
+            btn = Gtk.ToggleButton(label=tab_label)
+            btn.set_hexpand(True)
+            if first_btn is None:
+                first_btn = btn
+                btn.set_active(True)
+            else:
+                btn.set_group(first_btn)
+            btn.connect("toggled", self._on_tab_toggled, tab_id)
+            tab_bar.append(btn)
+            self._tab_btns[tab_id] = btn
+
+        sidebar.append(tab_bar)
+        tab_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sidebar.append(tab_sep)
+
+        # Stack pour les pages
+        self._tab_stack = Gtk.Stack()
+        self._tab_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self._tab_stack.set_transition_duration(120)
+        self._tab_stack.set_vexpand(True)
+        sidebar.append(self._tab_stack)
+        root_box.append(self._sidebar)
+
+        # ── PAGE AFFICHAGE ──────────────────────────────
+        page_display = Gtk.ScrolledWindow()
+        page_display.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page_display.set_vexpand(True)
+        box_display = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box_display.set_margin_start(12)
+        box_display.set_margin_end(12)
+        box_display.set_margin_top(12)
+        box_display.set_margin_bottom(16)
+
         # Section Écrans
         if len(self.monitors) > 1:
+            group_screens = Adw.PreferencesGroup(title="Écrans")
             mon_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             mon_box.set_margin_start(12)
             mon_box.set_margin_end(12)
             mon_box.set_margin_top(8)
             mon_box.set_margin_bottom(8)
-
-            # Schéma visuel des écrans
             btns_box = Gtk.Box(spacing=4)
             btns_box.set_halign(Gtk.Align.CENTER)
-
             self.monitor_btns = []
-            first_btn = None
+            first_mon_btn = None
             for i, mon in enumerate(self.monitors):
                 label = f"Écran {i + 1}"
                 if mon.primary:
                     label += " ★"
                 btn = Gtk.ToggleButton(label=label)
-                btn.set_tooltip_text(
-                    f"{mon.name}\n{mon.width}×{mon.height}"
-                    f"\nPosition: {mon.x},{mon.y}"
-                )
+                btn.set_tooltip_text(f"{mon.name}\n{mon.width}×{mon.height}\nPosition: {mon.x},{mon.y}")
                 btn.set_size_request(80, 36)
                 if i == 0:
                     btn.set_active(True)
                     btn.add_css_class("suggested-action")
-                if first_btn is None:
-                    first_btn = btn
+                if first_mon_btn is None:
+                    first_mon_btn = btn
                 else:
-                    btn.set_group(first_btn)
+                    btn.set_group(first_mon_btn)
                 btn.connect("toggled", self._on_monitor_toggle, i)
                 btns_box.append(btn)
                 self.monitor_btns.append(btn)
-
             mon_box.append(btns_box)
-
-            # Label info moniteur
             self.lbl_monitor = Gtk.Label()
             self.lbl_monitor.set_markup(self._monitor_markup(0))
             self.lbl_monitor.set_wrap(True)
             mon_box.append(self.lbl_monitor)
-
-            # Mode d'application
             mode_label = Gtk.Label()
             mode_label.set_markup("<small>Application:</small>")
             mode_label.set_xalign(0)
             mon_box.append(mode_label)
-
             self.chk_same_all = Gtk.CheckButton(label="Même image sur tous")
             self.chk_same_all.set_active(True)
-            self.chk_same_all.set_tooltip_text(
-                "Décocher pour mettre une image différente par écran"
-            )
+            self.chk_same_all.set_tooltip_text("Décocher pour une image différente par écran")
             mon_box.append(self.chk_same_all)
-
             mon_row = Adw.PreferencesRow()
             mon_row.set_child(mon_box)
             group_screens.add(mon_row)
-
-            group_folders = Adw.PreferencesGroup(title="Dossiers rapides")
-
-            for i, mon in enumerate(self.monitors):
-                folder_row = Adw.ActionRow(
-                    title=f"Écran {i+1} — {mon.name[:20]}",
-                    subtitle=self.settings.monitor_folders.get(
-                        mon.connector, "Non assigné"
-                    )[-40:],
-                )
-                btn_assign = Gtk.Button()
-                btn_assign.set_child(
-                    Gtk.Image.new_from_icon_name("folder-symbolic")
-                )
-                btn_assign.set_valign(Gtk.Align.CENTER)
-                btn_assign.set_tooltip_text("Choisir le dossier de cet écran")
-                btn_assign.connect(
-                    "clicked", self._on_assign_monitor_folder, mon.connector, folder_row
-                )
-                folder_row.add_suffix(btn_assign)
-                btn_load = Gtk.Button()
-                btn_load.set_child(
-                    Gtk.Image.new_from_icon_name("go-jump-symbolic")
-                )
-                btn_load.set_valign(Gtk.Align.CENTER)
-                btn_load.set_tooltip_text("Charger ce dossier dans la galerie")
-                btn_load.connect(
-                    "clicked",
-                    self._on_load_monitor_folder,
-                    mon.connector
-                )
-                folder_row.add_suffix(btn_load)
-                group_folders.add(folder_row)
-
-            right.append(group_folders)
+            box_display.append(group_screens)
         else:
             self.monitor_btns = []
             self.chk_same_all = None
 
-        # Section Mode
+        # Section Options
+        group_options = Adw.PreferencesGroup(title="Options")
         mode_row = Adw.PreferencesRow()
-        mode_inner = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL, spacing=8
-        )
+        mode_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         mode_inner.set_margin_start(12)
         mode_inner.set_margin_end(12)
         mode_inner.set_margin_top(8)
         mode_inner.set_margin_bottom(8)
-
         mode_title = Gtk.Label(label="Mode d'affichage")
         mode_title.set_xalign(0)
         mode_title.set_hexpand(True)
         mode_title.set_ellipsize(Pango.EllipsizeMode.END)
         mode_inner.append(mode_title)
-
         self.mode_ids = [mid for mid, _ in GnomeBackend.MODES]
-        self.mode_dropdown = Gtk.DropDown.new_from_strings(
-            [mlabel for _, mlabel in GnomeBackend.MODES]
-        )
+        self.mode_dropdown = Gtk.DropDown.new_from_strings([mlabel for _, mlabel in GnomeBackend.MODES])
         self.mode_dropdown.set_selected(
-            self.mode_ids.index(self.settings.mode)
-            if self.settings.mode in self.mode_ids
-            else 0
+            self.mode_ids.index(self.settings.mode) if self.settings.mode in self.mode_ids else 0
         )
         self.mode_dropdown.set_valign(Gtk.Align.CENTER)
         self.mode_dropdown.set_hexpand(False)
         self.mode_dropdown.set_size_request(150, -1)
         mode_inner.append(self.mode_dropdown)
-
         mode_row.set_child(mode_inner)
-        group_display.add(mode_row)
+        group_options.add(mode_row)
 
         lock_row = Adw.ActionRow(
             title="Écran de verrouillage",
@@ -510,197 +506,23 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.chk_lock.set_valign(Gtk.Align.CENTER)
         lock_row.add_suffix(self.chk_lock)
         lock_row.set_activatable_widget(self.chk_lock)
-        group_display.add(lock_row)
+        group_options.add(lock_row)
+        box_display.append(group_options)
 
-        # Section Info
-        info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        info_box.set_margin_start(12)
-        info_box.set_margin_end(12)
-        info_box.set_margin_top(8)
-        info_box.set_margin_bottom(8)
+        page_display.set_child(box_display)
+        self._tab_stack.add_named(page_display, "display")
 
-        self.lbl_name = Gtk.Label(label="Aucune sélection")
-        self.lbl_name.set_wrap(True)
-        self.lbl_name.set_max_width_chars(28)
-        self.lbl_name.set_xalign(0)
-        self.lbl_name.set_selectable(True)
-        info_box.append(self.lbl_name)
-
-        self.lbl_size = Gtk.Label()
-        self.lbl_size.set_xalign(0)
-        self.lbl_size.add_css_class("dim-label")
-        info_box.append(self.lbl_size)
-
-        self.lbl_dims = Gtk.Label()
-        self.lbl_dims.set_xalign(0)
-        self.lbl_dims.add_css_class("dim-label")
-        info_box.append(self.lbl_dims)
-
-        info_row = Adw.PreferencesRow()
-        info_row.set_child(info_box)
-        group_image.add(info_row)
-
-        # Section Dossier
-        folder_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        folder_box.set_margin_start(12)
-        folder_box.set_margin_end(12)
-        folder_box.set_margin_top(8)
-        folder_box.set_margin_bottom(8)
-
-        self.lbl_folder = Gtk.Label()
-        self.lbl_folder.set_wrap(True)
-        self.lbl_folder.set_max_width_chars(28)
-        self.lbl_folder.set_xalign(0)
-        self.lbl_folder.set_selectable(True)
-        folder_box.append(self.lbl_folder)
-
-        self.lbl_count = Gtk.Label()
-        self.lbl_count.set_xalign(0)
-        self.lbl_count.add_css_class("dim-label")
-        folder_box.append(self.lbl_count)
-
-        gallery_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        gallery_toolbar.set_margin_top(6)
-        gallery_toolbar.set_hexpand(False)
-
-        sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-        sep.set_margin_start(4)
-        sep.set_margin_end(4)
-        gallery_toolbar.append(sep)
-
-        btn_bookmark = Gtk.Button()
-        btn_bookmark.set_child(
-            Gtk.Image.new_from_icon_name("list-add-symbolic")
-        )
-        btn_bookmark.set_tooltip_text(
-            "Ajouter le dossier actuel aux favoris"
-        )
-        btn_bookmark.connect("clicked", self._on_add_bookmark)
-        gallery_toolbar.append(btn_bookmark)
-
-        self.btn_bookmarks = Gtk.MenuButton()
-        self.btn_bookmarks.set_child(
-            Gtk.Image.new_from_icon_name("user-bookmarks-symbolic")
-        )
-        self.btn_bookmarks.set_tooltip_text("Ouvrir un dossier favori")
-        gallery_toolbar.append(self.btn_bookmarks)
-        self._rebuild_bookmarks_menu()
-
-        self.btn_folder_slideshow = Gtk.ToggleButton()
-        self.btn_folder_slideshow.set_child(
-            Gtk.Image.new_from_icon_name("starred-symbolic")
-        )
-        self.btn_folder_slideshow.set_tooltip_text(
-            "Inclure ce dossier dans le slideshow"
-        )
-        self.btn_folder_slideshow.connect(
-            "toggled", self._on_folder_slideshow_toggled
-        )
-        gallery_toolbar.append(self.btn_folder_slideshow)
-        folder_box.append(gallery_toolbar)
-
-        folder_row = Adw.PreferencesRow()
-        folder_row.set_child(folder_box)
-        group_image.add(folder_row)
-
-        right.append(group_screens)
-        right.append(group_display)
-
-        # ── Section AVIF ──
-        group_avif = Adw.PreferencesGroup(title="Cache AVIF")
-        group_avif.set_margin_bottom(6)
-
-        # Stats dossier courant
-        self._avif_stats_label = Gtk.Label()
-        self._avif_stats_label.set_xalign(0)
-        self._avif_stats_label.add_css_class("dim-label")
-        self._avif_stats_label.set_margin_start(12)
-        self._avif_stats_label.set_margin_top(6)
-        self._avif_stats_label.set_margin_bottom(2)
-        self._avif_stats_label.set_wrap(True)
-        self._avif_stats_label.set_text(
-            "AVIF non disponible — installez pillow-avif-plugin"
-            if not AVIF_SUPPORTED else "Aucune info"
-        )
-        stats_row = Adw.PreferencesRow()
-        stats_row.set_child(self._avif_stats_label)
-        group_avif.add(stats_row)
-
-        # Barre de progression conversion
-        self._avif_progress_bar = Gtk.ProgressBar()
-        self._avif_progress_bar.set_hexpand(True)
-        self._avif_progress_bar.set_margin_start(12)
-        self._avif_progress_bar.set_margin_end(12)
-        self._avif_progress_bar.set_margin_top(4)
-        self._avif_progress_bar.set_margin_bottom(4)
-        self._avif_progress_bar.set_visible(False)
-        self._avif_progress_label = Gtk.Label()
-        self._avif_progress_label.add_css_class("dim-label")
-        self._avif_progress_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self._avif_progress_label.set_margin_start(12)
-        self._avif_progress_label.set_visible(False)
-
-        progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        progress_box.set_margin_top(4)
-        progress_box.set_margin_bottom(4)
-        progress_box.append(self._avif_progress_bar)
-        progress_box.append(self._avif_progress_label)
-        progress_row = Adw.PreferencesRow()
-        progress_row.set_child(progress_box)
-        group_avif.add(progress_row)
-
-        # Boutons convertir / annuler / purger
-        avif_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        avif_btn_box.set_margin_start(12)
-        avif_btn_box.set_margin_end(12)
-        avif_btn_box.set_margin_top(6)
-        avif_btn_box.set_margin_bottom(6)
-
-        self.btn_avif_convert = Gtk.Button(label="Convertir ce dossier")
-        self.btn_avif_convert.add_css_class("suggested-action")
-        self.btn_avif_convert.set_hexpand(True)
-        self.btn_avif_convert.set_sensitive(AVIF_SUPPORTED)
-        self.btn_avif_convert.set_tooltip_text(
-            "Convertit toutes les images du dossier en AVIF dans .mural_cache/"
-        )
-        self.btn_avif_convert.connect("clicked", self._on_avif_convert)
-
-        self.btn_avif_cancel = Gtk.Button(label="Annuler")
-        self.btn_avif_cancel.set_visible(False)
-        self.btn_avif_cancel.connect("clicked", lambda *_: self.avif_converter.cancel())
-
-        self.btn_avif_purge = Gtk.Button(label="Purger")
-        self.btn_avif_purge.add_css_class("destructive-action")
-        self.btn_avif_purge.set_tooltip_text("Supprime le .mural_cache/ de ce dossier")
-        self.btn_avif_purge.set_sensitive(AVIF_SUPPORTED)
-        self.btn_avif_purge.connect("clicked", self._on_avif_purge)
-
-        avif_btn_box.append(self.btn_avif_convert)
-        avif_btn_box.append(self.btn_avif_cancel)
-        avif_btn_box.append(self.btn_avif_purge)
-
-        avif_btn_row = Adw.PreferencesRow()
-        avif_btn_row.set_child(avif_btn_box)
-        group_avif.add(avif_btn_row)
-
-        # Toggle — servir l'AVIF à GNOME si disponible
-        avif_gnome_row = Adw.ActionRow(
-            title="Utiliser l'AVIF pour le fond",
-            subtitle="Applique l'AVIF à GNOME si disponible pour ce fichier",
-        )
-        self.switch_avif_gnome = Gtk.Switch()
-        self.switch_avif_gnome.set_active(self.settings.avif_use_for_gnome)
-        self.switch_avif_gnome.set_valign(Gtk.Align.CENTER)
-        self.switch_avif_gnome.set_sensitive(AVIF_SUPPORTED)
-        self.switch_avif_gnome.connect("notify::active", self._on_avif_gnome_toggle)
-        avif_gnome_row.add_suffix(self.switch_avif_gnome)
-        avif_gnome_row.set_activatable_widget(self.switch_avif_gnome)
-        group_avif.add(avif_gnome_row)
-
-        right.append(group_avif)
+        # ── PAGE SLIDESHOW ──────────────────────────────
+        page_slideshow = Gtk.ScrolledWindow()
+        page_slideshow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page_slideshow.set_vexpand(True)
+        box_slideshow = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box_slideshow.set_margin_start(12)
+        box_slideshow.set_margin_end(12)
+        box_slideshow.set_margin_top(12)
+        box_slideshow.set_margin_bottom(16)
 
         group_slideshow = Adw.PreferencesGroup(title="Slideshow")
-
         slideshow_row = Adw.ActionRow(
             title="Changement automatique",
             subtitle="Change le fond toutes les X minutes",
@@ -724,15 +546,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         interval_lbl.set_xalign(0)
         interval_inner.append(interval_lbl)
         self.spin_interval = Gtk.SpinButton()
-        self.spin_interval.set_adjustment(
-            Gtk.Adjustment(
-                value=self.settings.slideshow_interval,
-                lower=1,
-                upper=1440,
-                step_increment=1,
-                page_increment=10,
-            )
-        )
+        self.spin_interval.set_adjustment(Gtk.Adjustment(
+            value=self.settings.slideshow_interval,
+            lower=1, upper=1440, step_increment=1, page_increment=10,
+        ))
         self.spin_interval.set_numeric(True)
         self.spin_interval.set_valign(Gtk.Align.CENTER)
         self.spin_interval.set_size_request(80, -1)
@@ -749,69 +566,229 @@ class WallpaperApp(Adw.ApplicationWindow):
         random_row.add_suffix(self.switch_random)
         random_row.set_activatable_widget(self.switch_random)
         group_slideshow.add(random_row)
+        box_slideshow.append(group_slideshow)
 
         if len(self.monitors) > 1:
-            screens_row = Adw.PreferencesRow()
-            screens_box = Gtk.Box(
-                orientation=Gtk.Orientation.VERTICAL, spacing=4
-            )
-            screens_box.set_margin_start(12)
-            screens_box.set_margin_end(12)
-            screens_box.set_margin_top(8)
-            screens_box.set_margin_bottom(8)
-
-            screens_lbl = Gtk.Label(label="Appliquer sur :")
-            screens_lbl.set_xalign(0)
-            screens_lbl.add_css_class("dim-label")
-            screens_box.append(screens_lbl)
-
+            group_ss_screens = Adw.PreferencesGroup(title="Appliquer sur")
             self._slideshow_monitor_checks = {}
             for mon in self.monitors:
-                chk = Gtk.CheckButton(
-                    label=f"Écran {mon.name[:24]}"
-                )
+                chk = Gtk.CheckButton(label=f"Écran {mon.name[:24]}")
                 chk.set_active(
                     not self.settings.slideshow_monitors
                     or mon.connector in self.settings.slideshow_monitors
                 )
-                chk.connect(
-                    "toggled",
-                    self._on_slideshow_monitor_toggled,
-                    mon.connector
-                )
+                chk.connect("toggled", self._on_slideshow_monitor_toggled, mon.connector)
                 self._slideshow_monitor_checks[mon.connector] = chk
-                screens_box.append(chk)
-
-            screens_row.set_child(screens_box)
-            group_slideshow.add(screens_row)
+                chk_row = Adw.PreferencesRow()
+                chk_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                chk_inner.set_margin_start(12)
+                chk_inner.set_margin_end(12)
+                chk_inner.set_margin_top(6)
+                chk_inner.set_margin_bottom(6)
+                chk_inner.append(chk)
+                chk_row.set_child(chk_inner)
+                group_ss_screens.add(chk_row)
+            box_slideshow.append(group_ss_screens)
 
         self.lbl_slideshow_count = Gtk.Label()
         self.lbl_slideshow_count.add_css_class("dim-label")
         self.lbl_slideshow_count.set_xalign(0)
-        self.lbl_slideshow_count.set_margin_start(12)
-        self.lbl_slideshow_count.set_margin_top(4)
-        self.lbl_slideshow_count.set_margin_bottom(4)
+        self.lbl_slideshow_count.set_margin_start(4)
         self._update_slideshow_count_label()
+        box_slideshow.append(self.lbl_slideshow_count)
 
-        count_row = Adw.PreferencesRow()
-        count_row.set_child(self.lbl_slideshow_count)
-        group_slideshow.add(count_row)
-
-        next_row = Adw.PreferencesRow()
-        btn_next = Gtk.Button(label="Image suivante maintenant")
+        btn_next = Gtk.Button(label="⏭  Image suivante maintenant")
         btn_next.add_css_class("flat")
-        btn_next.set_margin_start(12)
-        btn_next.set_margin_end(12)
-        btn_next.set_margin_top(8)
-        btn_next.set_margin_bottom(8)
         btn_next.connect("clicked", lambda *_: self.slideshow.next())
-        next_row.set_child(btn_next)
-        group_slideshow.add(next_row)
+        box_slideshow.append(btn_next)
 
-        right.append(group_slideshow)
-        right.append(group_image)
-        right.append(Gtk.Box())
-        root_box.append(clamp)
+        page_slideshow.set_child(box_slideshow)
+        self._tab_stack.add_named(page_slideshow, "slideshow")
+
+        # ── PAGE DOSSIERS ───────────────────────────────
+        page_folders = Gtk.ScrolledWindow()
+        page_folders.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page_folders.set_vexpand(True)
+        box_folders = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box_folders.set_margin_start(12)
+        box_folders.set_margin_end(12)
+        box_folders.set_margin_top(12)
+        box_folders.set_margin_bottom(16)
+
+        # Dossiers rapides par écran (si multi-monitor)
+        if len(self.monitors) > 1:
+            group_folders_mon = Adw.PreferencesGroup(title="Dossiers rapides")
+            for i, mon in enumerate(self.monitors):
+                folder_row = Adw.ActionRow(
+                    title=f"Écran {i+1} — {mon.name[:20]}",
+                    subtitle=self.settings.monitor_folders.get(mon.connector, "Non assigné")[-40:],
+                )
+                btn_assign = Gtk.Button()
+                btn_assign.set_child(Gtk.Image.new_from_icon_name("folder-symbolic"))
+                btn_assign.set_valign(Gtk.Align.CENTER)
+                btn_assign.set_tooltip_text("Choisir le dossier de cet écran")
+                btn_assign.connect("clicked", self._on_assign_monitor_folder, mon.connector, folder_row)
+                folder_row.add_suffix(btn_assign)
+                btn_load = Gtk.Button()
+                btn_load.set_child(Gtk.Image.new_from_icon_name("go-jump-symbolic"))
+                btn_load.set_valign(Gtk.Align.CENTER)
+                btn_load.set_tooltip_text("Charger ce dossier dans la galerie")
+                btn_load.connect("clicked", self._on_load_monitor_folder, mon.connector)
+                folder_row.add_suffix(btn_load)
+                group_folders_mon.add(folder_row)
+            box_folders.append(group_folders_mon)
+
+        # Dossier courant
+        group_current = Adw.PreferencesGroup(title="Dossier courant")
+        folder_info_row = Adw.PreferencesRow()
+        folder_info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        folder_info_box.set_margin_start(12)
+        folder_info_box.set_margin_end(12)
+        folder_info_box.set_margin_top(8)
+        folder_info_box.set_margin_bottom(8)
+        self.lbl_folder = Gtk.Label()
+        self.lbl_folder.set_wrap(True)
+        self.lbl_folder.set_max_width_chars(28)
+        self.lbl_folder.set_xalign(0)
+        self.lbl_folder.set_selectable(True)
+        folder_info_box.append(self.lbl_folder)
+        self.lbl_count = Gtk.Label()
+        self.lbl_count.set_xalign(0)
+        self.lbl_count.add_css_class("dim-label")
+        folder_info_box.append(self.lbl_count)
+        folder_info_row.set_child(folder_info_box)
+        group_current.add(folder_info_row)
+
+        # Actions dossier courant
+        folder_actions_row = Adw.PreferencesRow()
+        gallery_toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        gallery_toolbar.set_margin_start(12)
+        gallery_toolbar.set_margin_end(12)
+        gallery_toolbar.set_margin_top(6)
+        gallery_toolbar.set_margin_bottom(6)
+        btn_bookmark = Gtk.Button()
+        btn_bookmark.set_child(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+        btn_bookmark.set_tooltip_text("Ajouter le dossier actuel aux favoris")
+        btn_bookmark.connect("clicked", self._on_add_bookmark)
+        gallery_toolbar.append(btn_bookmark)
+        self.btn_bookmarks = Gtk.MenuButton()
+        self.btn_bookmarks.set_child(Gtk.Image.new_from_icon_name("user-bookmarks-symbolic"))
+        self.btn_bookmarks.set_tooltip_text("Ouvrir un dossier favori")
+        gallery_toolbar.append(self.btn_bookmarks)
+        self._rebuild_bookmarks_menu()
+        self.btn_folder_slideshow = Gtk.ToggleButton()
+        self.btn_folder_slideshow.set_child(Gtk.Image.new_from_icon_name("starred-symbolic"))
+        self.btn_folder_slideshow.set_tooltip_text("Inclure ce dossier dans le slideshow")
+        self.btn_folder_slideshow.connect("toggled", self._on_folder_slideshow_toggled)
+        gallery_toolbar.append(self.btn_folder_slideshow)
+        folder_actions_row.set_child(gallery_toolbar)
+        group_current.add(folder_actions_row)
+        box_folders.append(group_current)
+
+        page_folders.set_child(box_folders)
+        self._tab_stack.add_named(page_folders, "folders")
+
+        # ── PAGE AVIF ───────────────────────────────────
+        page_avif = Gtk.ScrolledWindow()
+        page_avif.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        page_avif.set_vexpand(True)
+        box_avif = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box_avif.set_margin_start(12)
+        box_avif.set_margin_end(12)
+        box_avif.set_margin_top(12)
+        box_avif.set_margin_bottom(16)
+
+        group_avif = Adw.PreferencesGroup(title="Cache AVIF")
+        self._avif_stats_label = Gtk.Label()
+        self._avif_stats_label.set_xalign(0)
+        self._avif_stats_label.add_css_class("dim-label")
+        self._avif_stats_label.set_margin_start(12)
+        self._avif_stats_label.set_margin_top(6)
+        self._avif_stats_label.set_margin_bottom(2)
+        self._avif_stats_label.set_wrap(True)
+        self._avif_stats_label.set_text(
+            "AVIF non disponible — installez imagemagick"
+            if not AVIF_SUPPORTED else "Aucune info"
+        )
+        stats_row = Adw.PreferencesRow()
+        stats_row.set_child(self._avif_stats_label)
+        group_avif.add(stats_row)
+
+        self._avif_progress_bar = Gtk.ProgressBar()
+        self._avif_progress_bar.set_hexpand(True)
+        self._avif_progress_bar.set_margin_start(12)
+        self._avif_progress_bar.set_margin_end(12)
+        self._avif_progress_bar.set_margin_top(4)
+        self._avif_progress_bar.set_margin_bottom(4)
+        self._avif_progress_bar.set_visible(False)
+        self._avif_progress_label = Gtk.Label()
+        self._avif_progress_label.add_css_class("dim-label")
+        self._avif_progress_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._avif_progress_label.set_margin_start(12)
+        self._avif_progress_label.set_visible(False)
+        progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        progress_box.set_margin_top(4)
+        progress_box.set_margin_bottom(4)
+        progress_box.append(self._avif_progress_bar)
+        progress_box.append(self._avif_progress_label)
+        progress_row = Adw.PreferencesRow()
+        progress_row.set_child(progress_box)
+        group_avif.add(progress_row)
+
+        avif_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        avif_btn_box.set_margin_start(12)
+        avif_btn_box.set_margin_end(12)
+        avif_btn_box.set_margin_top(6)
+        avif_btn_box.set_margin_bottom(6)
+        self.btn_avif_convert = Gtk.Button(label="Convertir ce dossier")
+        self.btn_avif_convert.add_css_class("suggested-action")
+        self.btn_avif_convert.set_hexpand(True)
+        self.btn_avif_convert.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_convert.set_tooltip_text("Convertit toutes les images en AVIF dans .mural_cache/")
+        self.btn_avif_convert.connect("clicked", self._on_avif_convert)
+        self.btn_avif_cancel = Gtk.Button(label="Annuler")
+        self.btn_avif_cancel.set_visible(False)
+        self.btn_avif_cancel.connect("clicked", lambda *_: self.avif_converter.cancel())
+        self.btn_avif_purge = Gtk.Button(label="Purger")
+        self.btn_avif_purge.add_css_class("destructive-action")
+        self.btn_avif_purge.set_tooltip_text("Supprime le .mural_cache/ de ce dossier")
+        self.btn_avif_purge.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_purge.connect("clicked", self._on_avif_purge)
+        avif_btn_box.append(self.btn_avif_convert)
+        avif_btn_box.append(self.btn_avif_cancel)
+        avif_btn_box.append(self.btn_avif_purge)
+        avif_btn_row = Adw.PreferencesRow()
+        avif_btn_row.set_child(avif_btn_box)
+        group_avif.add(avif_btn_row)
+
+        avif_gnome_row = Adw.ActionRow(
+            title="Utiliser l'AVIF pour le fond",
+            subtitle="Applique l'AVIF à GNOME si disponible pour ce fichier",
+        )
+        self.switch_avif_gnome = Gtk.Switch()
+        self.switch_avif_gnome.set_active(self.settings.avif_use_for_gnome)
+        self.switch_avif_gnome.set_valign(Gtk.Align.CENTER)
+        self.switch_avif_gnome.set_sensitive(AVIF_SUPPORTED)
+        self.switch_avif_gnome.connect("notify::active", self._on_avif_gnome_toggle)
+        avif_gnome_row.add_suffix(self.switch_avif_gnome)
+        avif_gnome_row.set_activatable_widget(self.switch_avif_gnome)
+        group_avif.add(avif_gnome_row)
+        box_avif.append(group_avif)
+
+        page_avif.set_child(box_avif)
+        self._tab_stack.add_named(page_avif, "avif")
+
+        # Afficher la première page
+        self._tab_stack.set_visible_child_name("display")
+
+    def _on_tab_toggled(self, btn: Gtk.ToggleButton, tab_id: str) -> None:
+        if btn.get_active():
+            self._tab_stack.set_visible_child_name(tab_id)
+
+    def _on_sidebar_toggle(self, btn: Gtk.ToggleButton) -> None:
+        visible = btn.get_active()
+        self._sidebar.set_visible(visible)
+        self._sidebar_sep.set_visible(visible)
 
     def _ensure_slideshow_css(self) -> None:
         if self._slideshow_css_added:
@@ -983,9 +960,13 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._context_path = None
         self.btn_apply.set_sensitive(False)
         self.preview.set_paintable(None)
-        self.lbl_name.set_text(self._selection_placeholder)
-        self.lbl_size.set_text("")
-        self.lbl_dims.set_text("")
+        # Cacher les infos image dans la statusbar
+        self.lbl_name.set_visible(False)
+        self.lbl_size.set_visible(False)
+        self.lbl_dims.set_visible(False)
+        self._sb_sep1.set_visible(False)
+        self._sb_sep2.set_visible(False)
+        self._sb_sep3.set_visible(False)
         if hasattr(self, "_preview_placeholder_label"):
             self._preview_placeholder_label.set_visible(True)
         self._set_selected_child(None)
@@ -1404,6 +1385,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.add_controller(controller)
 
     def _on_key_shortcut(self, controller, keyval, keycode, state):
+        ctrl = state & Gdk.ModifierType.CONTROL_MASK
+        if ctrl and keyval == Gdk.KEY_b:
+            self._sidebar_toggle.set_active(not self._sidebar_toggle.get_active())
+            return True
         return False
 
     def _refresh_flowbox_columns(self) -> bool:
@@ -1499,25 +1484,34 @@ class WallpaperApp(Adw.ApplicationWindow):
     def _update_image_info(self, path: str) -> None:
         p = Path(path)
         self.lbl_name.set_markup(f"<b>{p.name}</b>")
+        self.lbl_name.set_visible(True)
+        self._sb_sep1.set_visible(True)
         try:
             sz = p.stat().st_size
             if sz > 1_048_576:
                 self.lbl_size.set_text(f"{sz / 1_048_576:.1f} Mo")
             else:
                 self.lbl_size.set_text(f"{sz / 1024:.0f} Ko")
+            self.lbl_size.set_visible(True)
+            self._sb_sep2.set_visible(True)
         except Exception:
-            self.lbl_size.set_text("")
+            self.lbl_size.set_visible(False)
+            self._sb_sep2.set_visible(False)
 
         self.lbl_dims.set_text("…")
+        self.lbl_dims.set_visible(True)
+        self._sb_sep3.set_visible(True)
 
         def _load_dims() -> None:
             dims = ImageLoader.get_dimensions(path)
 
             def _update() -> bool:
                 if self.selected_image == path:
-                    self.lbl_dims.set_text(
-                        f"{dims[0]} × {dims[1]} px" if dims else ""
-                    )
+                    if dims:
+                        self.lbl_dims.set_text(f"{dims[0]} × {dims[1]} px")
+                    else:
+                        self.lbl_dims.set_visible(False)
+                        self._sb_sep3.set_visible(False)
                 return False
 
             GLib.idle_add(_update)
@@ -1540,7 +1534,6 @@ class WallpaperApp(Adw.ApplicationWindow):
                 self.mode_dropdown.set_selected(self.mode_ids.index(mode))
         self._sync_folder_slideshow_btn()
         GLib.idle_add(self._update_avif_stats)
-        self._sync_folder_slideshow_btn()
 
     # ────────────────────────────────────────────────────────────
     # EVENTS
@@ -1835,11 +1828,12 @@ class WallpaperApp(Adw.ApplicationWindow):
             if stop_event.is_set() or generation != self.gallery_generation:
                 return
 
-            # Lancer la conversion AVIF en arrière-plan (non-bloquant)
-            self.avif_cache.convert_async(str(fpath))
+            # Utiliser l'AVIF comme source si disponible — plus léger à lire pour Pillow
+            avif = get_cached_avif(str(fpath))
+            thumb_source = str(avif) if avif else str(fpath)
 
             thumb_path = Thumbnailer.generate(
-                str(fpath), Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR
+                thumb_source, Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR
             )
             if generation != self.gallery_generation:
                 return
