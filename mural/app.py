@@ -24,6 +24,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 
 from .backend import GnomeBackend
+from .avif_cache import FolderConverter, get_cached_avif, AVIF_SUPPORTED, avif_path_for
 from .config import Config
 from .daemon import MuralDaemonProxy
 from .monitors import MonitorDetector
@@ -67,6 +68,11 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.settings = self.config.load()
         self.backend = GnomeBackend()
         self.slideshow = SlideshowManager(self)
+        self.avif_converter = FolderConverter()
+        if AVIF_SUPPORTED:
+            logger.info("Cache AVIF disponible (pillow-avif-plugin)")
+        else:
+            logger.info("pillow-avif-plugin absent — conversion AVIF désactivée")
         # Proxy optionnel vers le daemon D-Bus (fallback local sinon)
         self._daemon = MuralDaemonProxy()
         self.monitors = MonitorDetector.detect()
@@ -599,6 +605,100 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         right.append(group_screens)
         right.append(group_display)
+
+        # ── Section AVIF ──
+        group_avif = Adw.PreferencesGroup(title="Cache AVIF")
+        group_avif.set_margin_bottom(6)
+
+        # Stats dossier courant
+        self._avif_stats_label = Gtk.Label()
+        self._avif_stats_label.set_xalign(0)
+        self._avif_stats_label.add_css_class("dim-label")
+        self._avif_stats_label.set_margin_start(12)
+        self._avif_stats_label.set_margin_top(6)
+        self._avif_stats_label.set_margin_bottom(2)
+        self._avif_stats_label.set_wrap(True)
+        self._avif_stats_label.set_text(
+            "AVIF non disponible — installez pillow-avif-plugin"
+            if not AVIF_SUPPORTED else "Aucune info"
+        )
+        stats_row = Adw.PreferencesRow()
+        stats_row.set_child(self._avif_stats_label)
+        group_avif.add(stats_row)
+
+        # Barre de progression conversion
+        self._avif_progress_bar = Gtk.ProgressBar()
+        self._avif_progress_bar.set_hexpand(True)
+        self._avif_progress_bar.set_margin_start(12)
+        self._avif_progress_bar.set_margin_end(12)
+        self._avif_progress_bar.set_margin_top(4)
+        self._avif_progress_bar.set_margin_bottom(4)
+        self._avif_progress_bar.set_visible(False)
+        self._avif_progress_label = Gtk.Label()
+        self._avif_progress_label.add_css_class("dim-label")
+        self._avif_progress_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._avif_progress_label.set_margin_start(12)
+        self._avif_progress_label.set_visible(False)
+
+        progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        progress_box.set_margin_top(4)
+        progress_box.set_margin_bottom(4)
+        progress_box.append(self._avif_progress_bar)
+        progress_box.append(self._avif_progress_label)
+        progress_row = Adw.PreferencesRow()
+        progress_row.set_child(progress_box)
+        group_avif.add(progress_row)
+
+        # Boutons convertir / annuler / purger
+        avif_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        avif_btn_box.set_margin_start(12)
+        avif_btn_box.set_margin_end(12)
+        avif_btn_box.set_margin_top(6)
+        avif_btn_box.set_margin_bottom(6)
+
+        self.btn_avif_convert = Gtk.Button(label="Convertir ce dossier")
+        self.btn_avif_convert.add_css_class("suggested-action")
+        self.btn_avif_convert.set_hexpand(True)
+        self.btn_avif_convert.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_convert.set_tooltip_text(
+            "Convertit toutes les images du dossier en AVIF dans .mural_cache/"
+        )
+        self.btn_avif_convert.connect("clicked", self._on_avif_convert)
+
+        self.btn_avif_cancel = Gtk.Button(label="Annuler")
+        self.btn_avif_cancel.set_visible(False)
+        self.btn_avif_cancel.connect("clicked", lambda *_: self.avif_converter.cancel())
+
+        self.btn_avif_purge = Gtk.Button(label="Purger")
+        self.btn_avif_purge.add_css_class("destructive-action")
+        self.btn_avif_purge.set_tooltip_text("Supprime le .mural_cache/ de ce dossier")
+        self.btn_avif_purge.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_purge.connect("clicked", self._on_avif_purge)
+
+        avif_btn_box.append(self.btn_avif_convert)
+        avif_btn_box.append(self.btn_avif_cancel)
+        avif_btn_box.append(self.btn_avif_purge)
+
+        avif_btn_row = Adw.PreferencesRow()
+        avif_btn_row.set_child(avif_btn_box)
+        group_avif.add(avif_btn_row)
+
+        # Toggle — servir l'AVIF à GNOME si disponible
+        avif_gnome_row = Adw.ActionRow(
+            title="Utiliser l'AVIF pour le fond",
+            subtitle="Applique l'AVIF à GNOME si disponible pour ce fichier",
+        )
+        self.switch_avif_gnome = Gtk.Switch()
+        self.switch_avif_gnome.set_active(self.settings.avif_use_for_gnome)
+        self.switch_avif_gnome.set_valign(Gtk.Align.CENTER)
+        self.switch_avif_gnome.set_sensitive(AVIF_SUPPORTED)
+        self.switch_avif_gnome.connect("notify::active", self._on_avif_gnome_toggle)
+        avif_gnome_row.add_suffix(self.switch_avif_gnome)
+        avif_gnome_row.set_activatable_widget(self.switch_avif_gnome)
+        group_avif.add(avif_gnome_row)
+
+        right.append(group_avif)
+
         group_slideshow = Adw.PreferencesGroup(title="Slideshow")
 
         slideshow_row = Adw.ActionRow(
@@ -830,9 +930,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             dialog.set_version("0.1.1")
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
-            dialog.set_application_icon(
-                "preferences-desktop-wallpaper"
-            )
+            dialog.set_application_icon("io.github.gaorfg-bit.Mural")
             dialog.set_website("https://github.com/gaorfg-bit/mural")
             dialog.set_issue_url(
                 "https://github.com/gaorfg-bit/mural/issues"
@@ -846,9 +944,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             win.set_version("0.1.1")
             win.set_developer_name("GaoR")
             win.set_developers(["GaoR"])
-            win.set_application_icon(
-                "preferences-desktop-wallpaper"
-            )
+            win.set_application_icon("io.github.gaorfg-bit.Mural")
             win.set_website("https://github.com/gaorfg-bit/mural")
             win.set_issue_url(
                 "https://github.com/gaorfg-bit/mural/issues"
@@ -864,13 +960,22 @@ class WallpaperApp(Adw.ApplicationWindow):
     def _apply_wallpaper_global(self, path: str) -> bool:
         mode = self.mode_ids[self.mode_dropdown.get_selected()]
         lock = self.chk_lock.get_active()
+
+        # Servir l'AVIF à GNOME si l'utilisateur l'a activé et qu'un cache existe
+        apply_path = path
+        if self.settings.avif_use_for_gnome and AVIF_SUPPORTED:
+            cached = get_cached_avif(path)
+            if cached:
+                apply_path = str(cached)
+                logger.debug("Serving AVIF to GNOME: %s", cached.name)
+
         if getattr(self, "_daemon", None) and self._daemon.available:
-            ok = self._daemon.set_wallpaper(path)
+            ok = self._daemon.set_wallpaper(apply_path)
             if not ok:
                 self._status("✗ Échec via daemon — fallback local")
-                return self.backend.apply_single(path, mode=mode, lock=lock)
+                return self.backend.apply_single(apply_path, mode=mode, lock=lock)
             return True
-        return self.backend.apply_single(path, mode=mode, lock=lock)
+        return self.backend.apply_single(apply_path, mode=mode, lock=lock)
 
     def _clear_selection(self):
         self.selected_image = None
@@ -1032,6 +1137,70 @@ class WallpaperApp(Adw.ApplicationWindow):
             self._status("✓ Dossier ajouté au slideshow")
         else:
             self._status("Dossier retiré du slideshow")
+
+    # ── Handlers AVIF ────────────────────────────────────────────
+
+    def _on_avif_gnome_toggle(self, switch, _param) -> None:
+        self.settings.avif_use_for_gnome = switch.get_active()
+        self._schedule_save()
+
+    def _on_avif_convert(self, *_) -> None:
+        if self.avif_converter.is_running():
+            return
+        self.btn_avif_convert.set_sensitive(False)
+        self.btn_avif_cancel.set_visible(True)
+        self._avif_progress_bar.set_visible(True)
+        self._avif_progress_label.set_visible(True)
+        self._avif_progress_bar.set_fraction(0)
+        self._avif_progress_label.set_text("Démarrage…")
+        self._status("⏱ Conversion AVIF en cours…")
+        self.avif_converter.convert_folder(
+            self.folder,
+            Config.VALID_EXT,
+            on_progress=self._on_avif_progress,
+            on_done=self._on_avif_done,
+        )
+
+    def _on_avif_progress(self, converted: int, total: int, filename: str) -> None:
+        if total > 0:
+            self._avif_progress_bar.set_fraction(converted / total)
+        self._avif_progress_label.set_text(f"{converted}/{total} — {filename}")
+
+    def _on_avif_done(self, converted: int, total: int) -> None:
+        self._avif_progress_bar.set_visible(False)
+        self._avif_progress_label.set_visible(False)
+        self.btn_avif_cancel.set_visible(False)
+        self.btn_avif_convert.set_sensitive(True)
+        self._update_avif_stats()
+        if converted == 0 and total == 0:
+            self._status("⚠ Aucune image à convertir dans ce dossier")
+        else:
+            self._status(f"✓ AVIF : {converted}/{total} images converties")
+
+    def _on_avif_purge(self, *_) -> None:
+        removed = self.avif_converter.purge_folder(self.folder)
+        self._update_avif_stats()
+        self._status(f"✓ Cache AVIF purgé ({removed} fichiers supprimés)")
+
+    def _update_avif_stats(self) -> None:
+        if not hasattr(self, "_avif_stats_label") or not AVIF_SUPPORTED:
+            return
+        stats = self.avif_converter.folder_stats(self.folder, Config.VALID_EXT)
+        if stats["total"] == 0:
+            self._avif_stats_label.set_text("Dossier vide")
+            return
+        cached = stats["cached"]
+        total = stats["total"]
+        orig_mb = stats["size_original_mb"]
+        avif_mb = stats["size_avif_mb"]
+        saving = stats["saving_pct"]
+        if cached == 0:
+            self._avif_stats_label.set_text(f"{total} images — aucun cache AVIF")
+        else:
+            self._avif_stats_label.set_text(
+                f"{cached}/{total} converties — "
+                f"{orig_mb:.1f} Mo → {avif_mb:.1f} Mo (−{saving:.0f}%)"
+            )
 
     def _on_add_bookmark(self, *_) -> None:
         folder = str(self.folder)
@@ -1251,10 +1420,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         available = max(0, width - margin)
         spacing = self.flowbox.get_column_spacing()
 
-        # Cible : entre 120px et 220px par vignette selon la place
-        for target in [220, 200, 180, 160, 140, 120]:
+        # Cible : entre 80px et 160px par vignette selon la place
+        for target in [160, 140, 120, 100, 80]:
             cols = max(1, (available + spacing) // (target + spacing))
-            if cols >= 2:
+            if cols >= 3:
                 break
 
         thumb_w = max(
@@ -1266,6 +1435,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             int(round(thumb_w * Config.THUMBNAIL_ASPECT))
         )
 
+        prev_thumb_w = Config.THUMB_W
         if (cols != self._flowbox_columns
                 or thumb_w != Config.THUMB_W):
             self._flowbox_columns = cols
@@ -1275,7 +1445,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             self.flowbox.set_min_children_per_line(cols)
             self.flowbox.set_max_children_per_line(cols)
             # Recharger seulement si la différence est significative
-            if abs(thumb_w - Config.THUMBNAIL_SIZE) > 20:
+            if abs(thumb_w - prev_thumb_w) > 20:
                 GLib.idle_add(self._load_gallery)
 
         return False
@@ -1299,9 +1469,12 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._preview_timeout_id = None
 
         def _load_texture() -> None:
+            # Utiliser l'AVIF en cache si disponible (plus léger), sinon l'original
+            cached = get_cached_avif(path)
+            display_path = str(cached) if cached else path
             try:
                 texture: Optional[Gdk.Texture] = Gdk.Texture.new_from_file(
-                    Gio.File.new_for_path(path)
+                    Gio.File.new_for_path(display_path)
                 )
             except Exception as e:
                 logger.error(
@@ -1366,6 +1539,8 @@ class WallpaperApp(Adw.ApplicationWindow):
             if mode in self.mode_ids:
                 self.mode_dropdown.set_selected(self.mode_ids.index(mode))
         self._sync_folder_slideshow_btn()
+        GLib.idle_add(self._update_avif_stats)
+        self._sync_folder_slideshow_btn()
 
     # ────────────────────────────────────────────────────────────
     # EVENTS
@@ -1428,6 +1603,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.lbl_folder.set_text(str(self.folder))
         self._load_gallery()
         self._sync_folder_slideshow_btn()
+        GLib.idle_add(self._update_avif_stats)
 
     def _on_choose_folder_dialog(self, dialog, result):
         try:
@@ -1555,20 +1731,38 @@ class WallpaperApp(Adw.ApplicationWindow):
                 mon.connector: self.settings.per_monitor[mon.connector]
                 for mon in self.monitors
             }
-            results = self.backend.apply_per_monitor(
-                assignments, mode, lock, monitors=self.monitors
-            )
-            ok_count = sum(1 for v in results.values() if v)
-            total = len(results)
-            if ok_count == total:
-                self._set_active_wallpapers(list(assignments.values()))
-                self._status(
-                    f"✓ Composite appliqué: {ok_count}/{total} écrans"
+            monitors_snapshot = list(self.monitors)
+
+            def _apply_composite_thread():
+                results = self.backend.apply_per_monitor(
+                    assignments, mode, lock, monitors=monitors_snapshot
                 )
-            else:
-                self._status(
-                    f"⚠ Composite partiel: {ok_count}/{total} écrans"
-                )
+                ok_count = sum(1 for v in results.values() if v)
+                total = len(results)
+
+                def _on_done():
+                    if ok_count == total:
+                        self._set_active_wallpapers(list(assignments.values()))
+                        self._status(
+                            f"✓ Composite appliqué: {ok_count}/{total} écrans"
+                        )
+                    else:
+                        self._status(
+                            f"⚠ Composite partiel: {ok_count}/{total} écrans"
+                        )
+                    self.btn_apply.set_sensitive(True)
+                    self.btn_apply.set_label("✓ Appliqué !")
+                    GLib.timeout_add(
+                        2500,
+                        lambda: (self.btn_apply.set_label("Définir comme fond"), False)[-1]
+                    )
+                GLib.idle_add(_on_done)
+
+            threading.Thread(target=_apply_composite_thread, daemon=True).start()
+            self.settings.mode = mode
+            self.settings.lock_screen = lock
+            self._schedule_save()
+            return  # le reste est géré dans le thread
 
         self.settings.mode = mode
         self.settings.lock_screen = lock
@@ -1640,6 +1834,9 @@ class WallpaperApp(Adw.ApplicationWindow):
         for i, fpath in enumerate(files):
             if stop_event.is_set() or generation != self.gallery_generation:
                 return
+
+            # Lancer la conversion AVIF en arrière-plan (non-bloquant)
+            self.avif_cache.convert_async(str(fpath))
 
             thumb_path = Thumbnailer.generate(
                 str(fpath), Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR
@@ -1774,7 +1971,12 @@ class WallpaperApp(Adw.ApplicationWindow):
         box.append(overlay)
 
         self._thumb_views[str(fpath)] = (box, indicator, slideshow_indicator)
-        self._refresh_active_indicators()
+        # Ne pas appeler _refresh_active_indicators ici — trop coûteux sur 500 images.
+        # L'indicateur est initialisé directement selon l'état courant.
+        active = str(fpath) in self._active_wallpapers
+        if active:
+            box.add_css_class("thumb-active")
+        indicator.set_visible(active)
 
         self.flowbox.append(frame)
         fb_child = self.flowbox.get_last_child()
@@ -1854,11 +2056,12 @@ class WallpaperApp(Adw.ApplicationWindow):
 
     def _do_save(self) -> bool:
         self._save_timeout_id = None
-        self._schedule_save()
+        self.config.save(self.settings)
         return False
 
     def _on_close_request(self, *_) -> bool:
         self.slideshow.stop()
+        self.avif_converter.shutdown()
         self.settings.window_maximized = self.is_maximized()
         if not self.is_maximized():
             w, h = self.get_width(), self.get_height()

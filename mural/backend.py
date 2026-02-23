@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import logging
 import os
 from pathlib import Path
@@ -254,7 +256,6 @@ class GnomeBackend:
         # Un hash du contenu garantit un nouveau path = nouveau FD = reload forcé.
         cache_dir = Path(GLib.get_user_cache_dir()) / "mural"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        import io, hashlib
         buf = io.BytesIO()
         canvas.save(buf, "PNG")
         img_bytes = buf.getvalue()

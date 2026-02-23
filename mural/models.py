@@ -36,6 +36,7 @@ class WallpaperSettings:
     slideshow_monitors: List[str] = field(default_factory=list)
     folder_bookmarks: List[str] = field(default_factory=list)
     monitor_folders: Dict[str, str] = field(default_factory=dict)
+    avif_use_for_gnome: bool = False  # Servir l'AVIF à GNOME si disponible
 
     def to_dict(self):
         return asdict(self)

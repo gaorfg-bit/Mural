@@ -10,17 +10,20 @@ from .models import WallpaperSettings
 
 logger = logging.getLogger("wallpaper")
 
+import importlib.util
+
 class Config:
     _BASE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".svg"}
-    try:
-        import pillow_avif as _pillow_avif_check  # noqa: F401
-        VALID_EXT = _BASE_EXT | {".avif"}
-    except ImportError:
-        VALID_EXT = _BASE_EXT
+    VALID_EXT = (
+        _BASE_EXT | {".avif"}
+        if importlib.util.find_spec("pillow_avif") is not None
+        else _BASE_EXT
+    )
     CONFIG_FILE = Path.home() / ".config" / "mural" / "settings.json"
-    THUMB_DIR = Path(GLib.get_user_cache_dir()) / "mural" / "thumbnails"  # XDG_CACHE_HOME — compatible Flatpak sandbox
+    THUMB_DIR = Path(GLib.get_user_cache_dir()) / "mural" / "thumbnails"
+    AVIF_DIR = Path(GLib.get_user_cache_dir()) / "mural" / "avif"  # XDG_CACHE_HOME — compatible Flatpak sandbox
     THUMBNAIL_ASPECT = 220 / 360
-    THUMBNAIL_SIZE = 160
+    THUMBNAIL_SIZE = 120
     THUMB_W = THUMBNAIL_SIZE
     THUMB_H = max(1, int(round(THUMBNAIL_SIZE * THUMBNAIL_ASPECT)))
     MAX_IMAGES = 500
@@ -29,6 +32,7 @@ class Config:
 
     def __init__(self):
         self.THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        self.AVIF_DIR.mkdir(parents=True, exist_ok=True)
         self.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     @staticmethod

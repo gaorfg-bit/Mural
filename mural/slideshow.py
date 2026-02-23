@@ -63,24 +63,32 @@ class SlideshowManager:
         lock = self._app.chk_lock.get_active()
         target_monitors = self._app.settings.slideshow_monitors
         if not target_monitors:
-            # Tous les écrans — image unique globale
-            if getattr(self._app, "_daemon", None) and self._app._daemon.available:
-                ok = self._app._daemon.set_wallpaper(path)
-                if not ok:
-                    self._app._status("✗ Slideshow daemon — fallback local")
+            # Tous les écrans — image unique globale — traitement dans un thread séparé
+            def _apply_single_async():
+                if getattr(self._app, "_daemon", None) and self._app._daemon.available:
+                    ok = self._app._daemon.set_wallpaper(path)
+                    if not ok:
+                        GLib.idle_add(
+                            self._app._status,
+                            "✗ Slideshow daemon — fallback local"
+                        )
+                        ok = self._app.backend.apply_single(
+                            path, mode=mode, lock=lock
+                        )
+                else:
                     ok = self._app.backend.apply_single(
                         path, mode=mode, lock=lock
                     )
-            else:
-                ok = self._app.backend.apply_single(
-                    path, mode=mode, lock=lock
-                )
-            if ok:
-                self._app._status(f"⏱ Slideshow: {Path(path).name}")
-                GLib.idle_add(self._app._set_active_wallpapers, [path])
-                GLib.idle_add(self._app._update_preview, path)
-            else:
-                logger.error("Slideshow apply failed: %s", path)
+                if ok:
+                    GLib.idle_add(
+                        self._app._status, f"⏱ Slideshow: {Path(path).name}"
+                    )
+                    GLib.idle_add(self._app._set_active_wallpapers, [path])
+                    GLib.idle_add(self._app._update_preview, path)
+                else:
+                    logger.error("Slideshow apply failed: %s", path)
+
+            threading.Thread(target=_apply_single_async, daemon=True).start()
         else:
             # Composite multi-monitor — traitement PIL lourd → thread séparé
             threading.Thread(
