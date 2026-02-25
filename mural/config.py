@@ -27,8 +27,8 @@ class Config:
     THUMB_W = THUMBNAIL_SIZE
     THUMB_H = max(1, int(round(THUMBNAIL_SIZE * THUMBNAIL_ASPECT)))
     MAX_IMAGES = 500
-    PREVIEW_MAX_HEIGHT = 300
-    PREVIEW_MIN_HEIGHT = 200
+    PREVIEW_MAX_HEIGHT = 200
+    PREVIEW_MIN_HEIGHT = 140
 
     def __init__(self):
         self.THUMB_DIR.mkdir(parents=True, exist_ok=True)
