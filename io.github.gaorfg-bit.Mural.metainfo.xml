@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.gaorfg_bit.Mural</id>
+  <id>io.github.gaorfg-bit.Mural</id>
 
   <name>Mural</name>
   <summary>The wallpaper manager GNOME was missing</summary>
@@ -15,13 +15,13 @@
     </p>
     <ul>
       <li>Browse and apply wallpapers from any folder</li>
-      <li>Set a different wallpaper on each monitor</li>
-      <li>Automatic slideshow with configurable interval</li>
-      <li>Optional AVIF compression to reduce file sizes</li>
+      <li>Set a different wallpaper on each monitor natively</li>
+      <li>Automatic slideshow with configurable interval, random or sequential</li>
+      <li>Optional AVIF compression to reduce file sizes without touching originals</li>
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.gaorfg_bit.Mural.desktop</launchable>
+  <launchable type="desktop-id">io.github.gaorfg-bit.Mural.desktop</launchable>
 
   <url type="homepage">https://github.com/gaorfg-bit/Mural</url>
   <url type="bugtracker">https://github.com/gaorfg-bit/Mural/issues</url>

@@ -1,6 +1,6 @@
-app-id: io.github.gaorfg_bit.Mural
+app-id: io.github.gaorfg-bit.Mural
 runtime: org.gnome.Platform
-runtime-version: '46'
+runtime-version: '48'
 sdk: org.gnome.Sdk
 command: mural
 
@@ -9,12 +9,14 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  - --filesystem=home
-  - --filesystem=xdg-run/dconf
-  - --filesystem=~/.config/dconf:rw
+  # Access to user pictures for wallpaper browsing
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-download
+  # Allow user to pick any folder via file chooser portal
+  - --talk-name=org.freedesktop.portal.FileChooser
+  # dconf for storing settings
   - --talk-name=ca.desrt.dconf
-  - --talk-name=org.freedesktop.portal.Desktop
-  - --env=DCONF_USER_CONFIG_DIR=.config/dconf
+  - --metadata=X-DConf=migrate-path=/io/github/gaorfg-bit/Mural/
 
 modules:
   - python3-modules.json
@@ -29,11 +31,11 @@ modules:
         echo 'exec python3 /app/share/mural/app.py "$@"' >> /app/bin/mural
       - chmod +x /app/bin/mural
       - mkdir -p /app/share/icons/hicolor/128x128/apps/
-      - cp mural/data/icons/io.github.gaorfg-bit.Mural.png /app/share/icons/hicolor/128x128/apps/io.github.gaorfg_bit.Mural.png
+      - cp mural/data/icons/io.github.gaorfg-bit.Mural.png /app/share/icons/hicolor/128x128/apps/io.github.gaorfg-bit.Mural.png
       - mkdir -p /app/share/applications/
-      - cp io.github.gaorfg_bit.Mural.desktop /app/share/applications/
+      - cp io.github.gaorfg-bit.Mural.desktop /app/share/applications/
       - mkdir -p /app/share/metainfo/
-      - cp io.github.gaorfg_bit.Mural.metainfo.xml /app/share/metainfo/
+      - cp io.github.gaorfg-bit.Mural.metainfo.xml /app/share/metainfo/
     sources:
       - type: dir
         path: .
