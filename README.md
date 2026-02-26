@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="160">
+  <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="200" height="auto">
 </p>
 
 <h1 align="center">Mural</h1>
@@ -14,8 +14,6 @@
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
 </p>
-
----
 
 **The wallpaper manager GNOME was missing.**
 
