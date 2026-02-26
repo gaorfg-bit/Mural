@@ -23,10 +23,6 @@ class GnomeBackend:
         self.settings_schema = "org.gnome.desktop.background"
 
     def _force_gnome_settings(self, uri: str, mode: str):
-        """
-        Le cœur nucléaire du script : bypass l'API asynchrone pour imposer
-        la volonté du logiciel à GNOME instantanément.
-        """
         import subprocess
         cmds = [
             ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-options", "spanned"],

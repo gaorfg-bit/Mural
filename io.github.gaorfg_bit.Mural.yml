@@ -9,13 +9,9 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  - --filesystem=home
-  - --filesystem=xdg-run/dconf
-  - --filesystem=~/.config/dconf:rw
-  - --talk-name=ca.desrt.dconf
-  - --talk-name=org.freedesktop.portal.Desktop
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-download
   - --talk-name=org.freedesktop.Flatpak
-  - --env=DCONF_USER_CONFIG_DIR=.config/dconf
 
 modules:
   - python3-modules.json

@@ -180,6 +180,12 @@ class MuralWindow(Adw.ApplicationWindow):
         hb.pack_start(btn_folder)
         hb.pack_start(self._search_toggle)
 
+        if len(self.monitors) > 1:
+            btn_multimon_help = Gtk.Button(label=_("Multi-écrans ?"))
+            btn_multimon_help.get_style_context().add_class("flat")
+            btn_multimon_help.connect("clicked", self._on_multimon_help_clicked)
+            hb.pack_start(btn_multimon_help)
+
         # 2. BOUTON PLAT SUR UNE SEULE LIGNE
         self.btn_apply = Gtk.Button(label=_("Set as background"))
         self.btn_apply.set_sensitive(False)
@@ -1337,6 +1343,12 @@ class MuralWindow(Adw.ApplicationWindow):
     def _update_folder_count(self, total: int):
         if hasattr(self, "row_current_folder"):
             self.row_current_folder.set_subtitle(f"{self.folder}\n{total} " + (_("images") if total > 1 else _("image")))
+
+    def _on_multimon_help_clicked(self, widget):
+        try:
+            Gio.AppInfo.launch_default_for_uri("https://github.com/gaorfg-bit/Mural#multi-écrans", None)
+        except Exception as e:
+            logger.warning("Failed to open help URL: %s", e)
 
     def _init_state(self):
         self.row_current_folder.set_subtitle(str(self.folder))

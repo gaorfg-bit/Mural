@@ -37,6 +37,7 @@ class WallpaperSettings:
     folder_bookmarks: List[str] = field(default_factory=list)
     monitor_folders: Dict[str, str] = field(default_factory=dict)
     avif_use_for_gnome: bool = False  # Servir l'AVIF à GNOME si disponible
+    spanned_banner_dismissed: bool = False
 
     def to_dict(self):
         return asdict(self)
