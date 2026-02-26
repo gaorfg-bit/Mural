@@ -29,6 +29,14 @@ Browse your image collection, preview in full size, and set your wallpaper in on
 
 ---
 
+## Demo
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=jEkizpNf0B0">
+    <img src="https://img.youtube.com/vi/jEkizpNf0B0/maxresdefault.jpg" alt="Mural Demo" width="900">
+  </a>
+</p>
+
 ## What you can do with Mural
 
 **Browse and apply**
