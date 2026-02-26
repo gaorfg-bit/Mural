@@ -13,6 +13,7 @@
   <a href="https://wayland.freedesktop.org"><img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
+  [![Ko-fi](https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi)](https://ko-fi.com/M4M51RKN7V)
 </p>
 
 <p align="center">
@@ -94,5 +95,3 @@ Got an idea, found a bug, or want to add KDE support or a Flatpak package? Issue
 ## License
 
 GPL-3.0 — © 2026 GaoR
-
-<script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#72a4f2', 'M4M51RKN7V');kofiwidget2.draw();</script> 
