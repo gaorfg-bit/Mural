@@ -22,6 +22,13 @@ Browse your image collection, preview in full size, and set your wallpaper in on
 
 ---
 
+<p align="center">
+**The wallpaper manager GNOME was missing.**
+
+Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
+
+---
+
 ## What you can do with Mural
 
 **Browse and apply**
