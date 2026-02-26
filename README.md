@@ -1,12 +1,12 @@
-<p align="center">
-  <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="128">
-</p>
 
-<h1 align="center">Mural</h1>
+<img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="128">
 
-<p align="center">
+
+Mural
+
+
   <strong>The wallpaper manager GNOME was missing.</strong>
-</p>
+
 
 <p align="center">
   <img src="https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome" alt="GNOME 49">
@@ -15,11 +15,9 @@
   <img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License">
   </p>
 
-<p align="center"> **The wallpaper manager GNOME was missing.**
+**The wallpaper manager GNOME was missing.**
 
-Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on each screen if you have multiple monitors.
-</p>
-
+Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
 
 ---
 
