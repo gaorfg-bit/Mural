@@ -9,7 +9,7 @@ from PIL import Image
 from gi.repository import GLib
 
 # Import de tes modèles (assure-toi que MonitorInfo a bien x, y, width, height, connector)
-from .models import MonitorInfo
+from models import MonitorInfo
 
 logger = logging.getLogger("wallpaper")
 

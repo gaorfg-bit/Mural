@@ -27,13 +27,13 @@ gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
-from .backend import GnomeBackend
-from .config import Config
-from .daemon import MuralDaemonProxy
-from .monitors import MonitorDetector
-from .slideshow import SlideshowManager
-from .thumbnails import ImageLoader, Thumbnailer
-from .avif_cache import get_cached_avif, AVIF_SUPPORTED
+from backend import GnomeBackend
+from config import Config
+from daemon import MuralDaemonProxy
+from monitors import MonitorDetector
+from slideshow import SlideshowManager
+from thumbnails import ImageLoader, Thumbnailer
+from avif_cache import get_cached_avif, AVIF_SUPPORTED
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -104,7 +104,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.backend = GnomeBackend()
         self.slideshow = SlideshowManager(self)
         self._daemon = MuralDaemonProxy()
-        from .avif_cache import FolderConverter
+        from avif_cache import FolderConverter
         self.avif_converter = FolderConverter()
         self.monitors = MonitorDetector.detect()
         self.current_monitor = 0
@@ -676,7 +676,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._avif_progress_label.set_visible(True)
         self._avif_progress_bar.set_fraction(0)
         self._avif_progress_label.set_text(_("Starting…"))
-        from .config import Config
+        from config import Config
         self.avif_converter.convert_folder(
             folder=self.folder,
             valid_extensions=Config.VALID_EXT,
@@ -859,7 +859,7 @@ class MuralWindow(Adw.ApplicationWindow):
             dialog.set_version("0.1.1")
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
-            dialog.set_application_icon("io.github.gaorfg-bit.Mural")
+            dialog.set_application_icon("io.github.gaorfg_bit.Mural")
             dialog.set_website("https://github.com/gaorfg-bit/mural")
             dialog.set_issue_url("https://github.com/gaorfg-bit/mural/issues")
             dialog.set_copyright("© 2026 GaoR")
@@ -871,7 +871,7 @@ class MuralWindow(Adw.ApplicationWindow):
             win.set_version("0.1.1")
             win.set_developer_name("GaoR")
             win.set_developers(["GaoR"])
-            win.set_application_icon("io.github.gaorfg-bit.Mural")
+            win.set_application_icon("io.github.gaorfg_bit.Mural")
             win.set_website("https://github.com/gaorfg-bit/mural")
             win.set_issue_url("https://github.com/gaorfg-bit/mural/issues")
             win.set_copyright("© 2026 GaoR")
@@ -1852,7 +1852,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
 class MuralApplication(Adw.Application):
     def __init__(self, **kwargs):
-        super().__init__(application_id="io.github.gaorfg-bit.Mural", **kwargs)
+        super().__init__(application_id="io.github.gaorfg_bit.Mural", **kwargs)
 
     def do_activate(self):
         """Cette méthode est appelée au lancement de 'mural'"""
@@ -1876,3 +1876,7 @@ class MuralApplication(Adw.Application):
             traceback.print_exc()
             print("!"*50 + "\n")
             self.quit()
+
+if __name__ == "__main__":
+    app = MuralApplication()
+    app.run(sys.argv)

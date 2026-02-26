@@ -5,7 +5,7 @@ from typing import List
 
 from gi.repository import Gdk
 
-from .models import MonitorInfo
+from models import MonitorInfo
 
 logger = logging.getLogger("wallpaper")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from gi.repository import GLib
 
-from .models import WallpaperSettings
+from models import WallpaperSettings
 
 logger = logging.getLogger("wallpaper")
 
