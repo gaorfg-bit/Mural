@@ -1,4 +1,4 @@
-<p align="center">
+<p align="left">
   <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="100" height="auto">
 </p>
 
@@ -15,6 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
 </p>
 
+<p align="center">
 **The wallpaper manager GNOME was missing.**
 
 Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
@@ -34,6 +35,7 @@ Turn on auto-rotation and Mural will change your wallpaper every X minutes. Rand
 
 **AVIF compression** *(optional)*
 Have a large collection? Mural can convert your images to AVIF and cut their file size in half — without ever touching the originals.
+</p>
 
 ---
 
