@@ -28,9 +28,7 @@ Have a large collection? Mural can convert your images to AVIF and cut their fil
 ---
 
 <p align="center">
-
-<!--   <img src="assets/Mural.png" alt="Mural Logo" width="400"> -->
-
+  <img src="assets/Mural.png" alt="Mural Logo" width="600">
 </p>
 
 ### Installation
