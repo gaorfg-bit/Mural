@@ -109,6 +109,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.monitors = MonitorDetector.detect()
         self.current_monitor = 0
         self.selected_image: Optional[str] = None
+        self._texture_cache: Dict[str, Gdk.Texture] = {}
         self._selected_path: Optional[str] = None
         self._stop_event = threading.Event()
         self.gallery_generation = 0
@@ -666,7 +667,7 @@ class MuralWindow(Adw.ApplicationWindow):
             for mon in self.monitors:
                 self.settings.per_monitor[mon.connector] = self.selected_image
 
-    def _on_avif_convert(self, *_) -> None:
+    def _on_avif_convert(self, *_ignored) -> None:
         if self.avif_converter.is_running():
             return
         self.btn_avif_convert.set_sensitive(False)
@@ -695,7 +696,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._avif_progress_label.set_text(f"✓ {converted}/{total} " + _("images converted"))
         self._status(f"✓ AVIF: {converted}/{total} " + _("images converted"))
 
-    def _on_avif_purge(self, *_) -> None:
+    def _on_avif_purge(self, *_ignored) -> None:
         removed = self.avif_converter.purge_folder(self.folder)
         self._avif_progress_label.set_text(f"{removed} " + _("files deleted"))
         self._status(f"AVIF: {removed} " + _("files deleted"))
@@ -1086,7 +1087,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
         dialog.choose(self, None, _on_response)
 
-    def _on_add_bookmark(self, *_) -> None:
+    def _on_add_bookmark(self, *_ignored) -> None:
         folder = str(self.folder)
         if folder not in self.settings.folder_bookmarks:
             self.settings.folder_bookmarks.append(folder)
@@ -1143,7 +1144,7 @@ class MuralWindow(Adw.ApplicationWindow):
             return
         self._set_selected_folder(Gio.File.new_for_path(str(folder)))
 
-    def _on_remove_bookmark(self, *_) -> None:
+    def _on_remove_bookmark(self, *_ignored) -> None:
         folder = str(self.folder)
         if folder in self.settings.folder_bookmarks:
             self.settings.folder_bookmarks.remove(folder)
@@ -1402,9 +1403,9 @@ class MuralWindow(Adw.ApplicationWindow):
             self.flowbox.handler_unblock_by_func(self._on_flowbox_selection_changed)
 
         # Charger le dossier s'il a été assigné spécialement pour cet écran
-        assigned_folder = self.settings.monitor_folders.get(conn, "")
+        assigned_folder = self.settings.monitor_folders.get(conn)
         if assigned_folder and Path(assigned_folder).exists():
-            if str(self.folder) != assigned_folder:
+            if str(self.folder) != str(assigned_folder):
                 self._jump_to_folder(assigned_folder)
                 self._status(f"{_('Monitor')} {index + 1} — {_('folder')}: {Path(assigned_folder).name}")
         else:
@@ -1479,6 +1480,7 @@ class MuralWindow(Adw.ApplicationWindow):
                 except Exception:
                     pass
             self._status(f"{_('Cache cleared')} ({count} {_('files')})")
+            self._texture_cache.clear()
             self._load_gallery()
 
     def _on_gallery_click(self, flowbox, child):
@@ -1642,10 +1644,27 @@ class MuralWindow(Adw.ApplicationWindow):
         for i, fpath in enumerate(files):
             if stop_event.is_set() or generation != self.gallery_generation:
                 return
-            avif = get_cached_avif(str(fpath))
-            src = str(avif) if avif else str(fpath)
-            thumb_path = Thumbnailer.generate(src, Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR)
-            batch.append((fpath, thumb_path))
+            
+            # 1. Cache RAM : Si déjà chargé, on utilise la texture directement
+            if str(fpath) in self._texture_cache:
+                batch.append((fpath, self._texture_cache[str(fpath)]))
+            else:
+                # 2. Priorité AVIF pour la source
+                avif = get_cached_avif(str(fpath))
+                src = str(avif) if avif else str(fpath)
+                
+                # Génération sur disque (si nécessaire)
+                thumb_path = Thumbnailer.generate(src, Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR)
+                
+                # 3. Chargement Asynchrone : On lit le Pixbuf ici (Thread) pour ne pas bloquer l'UI
+                load_path = str(thumb_path) if (thumb_path and thumb_path.exists()) else src
+                try:
+                    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                        load_path, Config.THUMB_W, Config.THUMB_H, preserve_aspect_ratio=False
+                    )
+                    batch.append((fpath, pixbuf))
+                except Exception:
+                    batch.append((fpath, None))
 
             if len(batch) >= BATCH_SIZE or i == total - 1:
                 if stop_event.is_set() or generation != self.gallery_generation:
@@ -1669,46 +1688,48 @@ class MuralWindow(Adw.ApplicationWindow):
 
     def _add_thumb_batch(
         self,
-        items: List[Tuple[Path, Optional[Path]]],
+        items: List[Tuple[Path, object]],
         done_event: Optional[threading.Event],
     ) -> bool:
-        for fpath, thumb_path in items:
+        for fpath, obj in items:
             if self._stop_event.is_set():
                 break
-            self._add_thumb(fpath, thumb_path)
+            self._add_thumb(fpath, obj)
         if done_event is not None:
             done_event.set()
         return False
 
     def _add_thumb_batch_counted(self, items: list) -> bool:
-        for fpath, thumb_path in items:
+        for fpath, obj in items:
             if self._stop_event.is_set():
                 break
-            self._add_thumb(fpath, thumb_path)
+            self._add_thumb(fpath, obj)
         self._refresh_active_indicators()
         with self._pending_batches_lock:
             self._pending_batches = max(0, self._pending_batches - 1)
         return False
 
-    def _add_thumb(self, fpath: Path, thumb_path: Optional[Path]):
+    def _add_thumb(self, fpath: Path, image_obj: object):
         if self._stop_event.is_set():
             return False
-
-        source_path = str(thumb_path) if (thumb_path and thumb_path.exists()) else str(fpath)
 
         picture = Gtk.Picture()
         picture.set_can_shrink(True)
         picture.set_content_fit(Gtk.ContentFit.COVER)
         picture.set_size_request(Config.THUMB_W, Config.THUMB_H)
         try:
-            from gi.repository import GdkPixbuf
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                source_path, Config.THUMB_W, Config.THUMB_H,
-                preserve_aspect_ratio=False
-            )
-            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-            pixbuf = None
-            picture.set_paintable(texture)
+            texture = None
+            if isinstance(image_obj, Gdk.Texture):
+                texture = image_obj
+            elif isinstance(image_obj, GdkPixbuf.Pixbuf):
+                texture = Gdk.Texture.new_for_pixbuf(image_obj)
+                # Mise en cache RAM pour la prochaine fois
+                self._texture_cache[str(fpath)] = texture
+            
+            if texture:
+                picture.set_paintable(texture)
+            else:
+                raise ValueError("No texture")
         except Exception:
             picture = Gtk.Image.new_from_icon_name("image-missing")
             picture.set_size_request(Config.THUMB_W, Config.THUMB_H)
