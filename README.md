@@ -1,59 +1,35 @@
 # 🖼️ Mural
 
-**Gestionnaire de fonds d'écran moderne pour GNOME 49+ Wayland**
+**The wallpaper manager GNOME was missing.**
 
-> Parcourez, prévisualisez et appliquez vos wallpapers en un clic — avec support multi-moniteurs natif, slideshow automatique et conversion AVIF.
+Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on each screen if you have multiple monitors.
 
 ![GNOME 49](https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome)
-![Wayland](https://img.shields.io/badge/Wayland-Native-green)
+![Wayland](https://img.shields.io/badge/Wayland-✓-green)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python)
-![GTK4](https://img.shields.io/badge/GTK-4%20%2F%20Libadwaita-orange)
 ![License](https://img.shields.io/badge/License-GPL--3.0-red)
 
 ---
 
-## ✨ Fonctionnalités
+## What you can do with Mural
 
-### 🖥️ Multi-moniteurs natif
-- Image différente sur chaque écran, appliquée en un clic
-- Génération automatique d'un composite pixel-perfect sur le bureau virtuel
-- Détection dynamique des moniteurs (résolution, position, scaling)
-- Compatible fractional scaling Wayland
+**Browse and apply**
+Open a folder, scroll through thumbnails, click an image to preview it full size, then apply it. That's it.
 
-### 🎨 Galerie intuitive
-- Vignettes générées à la volée avec cache intelligent
-- Filtrage par nom en temps réel
-- Prévisualisation instantanée
-- Marquage des images actives
+**A different wallpaper on each screen**
+Got two monitors? Pick one image for your main display, another for the second. Mural handles everything — no manual setup needed.
 
-### ⏱️ Slideshow automatique
-- Rotation par intervalle configurable (minutes)
-- Mode aléatoire ou séquentiel
-- Sélection par dossier ou image individuelle
-- Ciblage par écran
+**Automatic slideshow**
+Turn on auto-rotation and Mural will change your wallpaper every X minutes. Random or sequential, on all your screens or just some of them.
 
-### 🗂️ Gestion des dossiers
-- Dossiers favoris avec assignation par écran
-- Navigation rapide entre collections
-
-### 🔷 AVIF (optionnel)
-- Conversion à la demande via ImageMagick
-- Gain de 60–75% sur la taille des fichiers
-- Les originaux ne sont jamais modifiés
+**AVIF compression** *(optional)*
+Have a large collection? Mural can convert your images to AVIF and cut their file size in half — without ever touching the originals.
 
 ---
 
-## 📸 Captures d'écran
+## Installation
 
-| Vue principale | Multi-moniteurs |
-|---|---|
-| *(galerie + prévisualisation)* | *(composite 2 écrans)* |
-
----
-
-## 🚀 Installation
-
-### Prérequis
+### Dependencies
 
 ```bash
 # Ubuntu / Debian
@@ -66,81 +42,39 @@ sudo dnf install python3-gobject python3-pillow gtk4 libadwaita
 sudo pacman -S python-gobject python-pillow gtk4 libadwaita
 ```
 
-### AVIF (optionnel)
-
-```bash
-# Ubuntu / Debian
-sudo apt install imagemagick
-
-# Fedora
-sudo dnf install ImageMagick
-
-# Arch
-sudo pacman -S imagemagick
-```
-
-### Lancement
+### Install
 
 ```bash
 git clone https://github.com/gaorfg-bit/mural
 cd mural
-python3 main.py
+pip install -r requirements.txt
+./install.sh
 ```
 
----
+That's it. Mural will appear in your GNOME Activities as **Mural**. No system-wide changes — everything installs in your home folder.
 
-## 🏗️ Architecture
+### Uninstall
 
-```
-mural/
-├── app.py          # Interface GTK4 / Libadwaita (WallpaperApp)
-├── backend.py      # Application du fond via XDG Portal
-├── monitors.py     # Détection des moniteurs (GDK pixels logiques)
-├── thumbnails.py   # Génération de vignettes (Pillow)
-├── slideshow.py    # Rotation automatique
-├── avif_cache.py   # Conversion AVIF (ImageMagick)
-├── config.py       # Persistance JSON
-├── models.py       # Types de données
-└── daemon.py       # Proxy D-Bus optionnel
+```bash
+./uninstall.sh
 ```
 
-### Détail technique — GNOME 49 Wayland
-
-GNOME 49 a rompu la compatibilité avec `gsettings set picture-uri` pour le rendu visuel en temps réel. Mural utilise exclusivement **`org.freedesktop.portal.Wallpaper.SetWallpaperFile`** comme canal d'application, avec `picture-options=spanned` écrit dans GSettings pour le mode de rendu du composite multi-moniteurs.
-
-Le composite est généré en **pixels logiques GDK** (pas physiques) — GNOME gère lui-même le scaling fractionnaire. La bounding box du bureau virtuel est calculée dynamiquement depuis les positions et dimensions rapportées par GDK.
+Removes everything cleanly.
 
 ---
 
-## ⚙️ Compatibilité
+## Compatibility
 
-| Environnement | Support |
-|---|---|
-| GNOME 49+ / Wayland | ✅ Complet |
-| GNOME 46–48 / Wayland | ✅ Compatible |
-| GNOME + X11 | ✅ Compatible |
-| KDE / XFCE | ⚠️ Non testé |
-| Flatpak / Sandbox | ⚠️ Portal uniquement |
+Mural works on **GNOME 46 and above**, on both Wayland and X11, with or without multiple monitors.
 
 ---
 
-## 🤝 Contribution
+## Contributing
 
-Les issues et PR sont les bienvenues. Domaines prioritaires :
-
-- Support KDE Plasma
-- Packaging Flatpak
-- Tests automatisés
-- Thèmes d'icônes
+Got an idea, found a bug, or want to add KDE support or a Flatpak package? Issues and PRs are welcome.
 
 ---
 
-## 📄 Licence
+## License
 
 GPL-3.0 — © 2026 GaoR
-
----
-
-## 🙏 Remerciements
-
-Merci aux projets [GTK4](https://gtk.org), [Libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), [Pillow](https://python-pillow.org) et à la communauté GNOME pour la documentation sur le portal XDG Wallpaper.
