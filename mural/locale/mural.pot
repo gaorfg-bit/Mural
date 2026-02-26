@@ -1,0 +1,67 @@
+msgid ""
+msgstr ""
+"Project-Id-Id: Mural 0.1\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-02-25 15:40+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: mural/app.py
+msgid "Set as background"
+msgstr ""
+
+#: mural/app.py
+msgid "Apply (All)"
+msgstr ""
+
+#: mural/app.py
+msgid "Apply (Screen %d)"
+msgstr ""
+
+#: mural/app.py
+msgid "Search (Ctrl+F)"
+msgstr ""
+
+#: mural/app.py
+msgid "⭐ Add to slideshow"
+msgstr ""
+
+#: mural/app.py
+msgid "❌ Remove from slideshow"
+msgstr ""
+
+#: mural/app.py
+msgid "🗑️ Delete from disk"
+msgstr ""
+
+#: mural/app.py
+msgid "Permanent deletion"
+msgstr ""
+
+#: mural/app.py
+msgid "Do you really want to erase this image from your hard drive?"
+msgstr ""
+
+#: mural/app.py
+msgid "Navigation"
+msgstr ""
+
+#: mural/app.py
+msgid "Current folder"
+msgstr ""
+
+#: mural/app.py
+msgid "My favorites"
+msgstr ""
+
+#: mural/app.py
+msgid "%d images in the list"
+msgstr ""
+
+#: mural/app.py
+msgid "No image selected"
+msgstr ""

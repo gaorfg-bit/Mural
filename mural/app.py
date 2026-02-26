@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import gc
 import logging
+import gettext
+import locale
+import os
 import sys
 import threading
+import traceback
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -21,7 +25,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
 from .backend import GnomeBackend
 from .config import Config
@@ -40,6 +44,18 @@ logging.basicConfig(
 logger = logging.getLogger("wallpaper")
 logger.setLevel(logging.DEBUG)
 
+# --- Configuration Multilingue ---
+APP_NAME = "mural"
+LOCALE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'locale')
+
+try:
+    locale.setlocale(locale.LC_ALL, '')
+except locale.Error:
+    pass
+
+gettext.bindtextdomain(APP_NAME, LOCALE_DIR)
+gettext.textdomain(APP_NAME)
+_ = gettext.gettext
 
 def _log_uncaught_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
@@ -79,7 +95,7 @@ flowboxchild picture, flowboxchild overlay { border-radius: 6px; }
 }
 """
 
-class WallpaperApp(Adw.ApplicationWindow):
+class MuralWindow(Adw.ApplicationWindow):
     def __init__(self, application: Adw.Application):
         super().__init__(application=application)
 
@@ -134,8 +150,8 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         self._init_shortcuts()
         if self._daemon.available:
-            logger.info("Slideshow délégué au daemon")
-            self._sync_ui_from_daemon()
+            logger.info("Slideshow delegated to daemon")
+            # self._sync_ui_from_daemon()
         elif self.settings.slideshow_enabled:
             self.slideshow.start()
 
@@ -144,9 +160,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         hb.set_show_title_buttons(True)
         self.set_decorated(True)
         n_mon = len(self.monitors)
+        
+        # 1. TITRE SUR UNE SEULE LIGNE
         self._title_widget = Adw.WindowTitle(
-            title="Mural",
-            subtitle=f"{n_mon} écran{'s' if n_mon > 1 else ''} détecté{'s' if n_mon > 1 else ''}",
+            title=f"Mural — {n_mon} " + (_("screens") if n_mon > 1 else _("screen"))
         )
         hb.set_title_widget(self._title_widget)
         self._ensure_menu_actions()
@@ -154,36 +171,26 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         btn_folder = Gtk.Button()
         btn_folder.set_child(Gtk.Image.new_from_icon_name("folder-open-symbolic"))
-        btn_folder.set_tooltip_text("Choisir un dossier")
+        btn_folder.set_tooltip_text(_("Choose a folder"))
         btn_folder.connect("clicked", self._on_choose_folder)
         self._search_toggle = Gtk.ToggleButton()
         self._search_toggle.set_icon_name("system-search-symbolic")
-        self._search_toggle.set_tooltip_text("Rechercher (Ctrl+F)")
+        self._search_toggle.set_tooltip_text(_("Search (Ctrl+F)"))
         hb.pack_start(btn_folder)
         hb.pack_start(self._search_toggle)
 
-        self.btn_apply = Gtk.Button()
-        self.btn_apply.add_css_class("suggested-action")
+        # 2. BOUTON PLAT SUR UNE SEULE LIGNE
+        self.btn_apply = Gtk.Button(label=_("Set as background"))
         self.btn_apply.set_sensitive(False)
+        self.btn_apply.set_valign(Gtk.Align.CENTER) # Force l'alignement vertical strict
         self.btn_apply.connect("clicked", self._on_apply)
-        _apply_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        _apply_box.set_halign(Gtk.Align.CENTER)
-        self._btn_apply_title = Gtk.Label(label="Définir comme fond")
-        self._btn_apply_title.add_css_class("heading")
-        self._btn_apply_subtitle = Gtk.Label(label="")
-        self._btn_apply_subtitle.add_css_class("caption")
-        self._btn_apply_subtitle.set_opacity(0.75)
-        self._btn_apply_subtitle.set_visible(False)
-        _apply_box.append(self._btn_apply_title)
-        _apply_box.append(self._btn_apply_subtitle)
-        self.btn_apply.set_child(_apply_box)
         hb.pack_end(self.btn_apply)
 
         app_menu = Gio.Menu()
-        app_menu.append("Rafraîchir la galerie", "win.refresh")
-        app_menu.append("Vider le cache", "win.clear_cache")
+        app_menu.append(_("Refresh gallery"), "win.refresh")
+        app_menu.append(_("Clear cache"), "win.clear_cache")
         _sep = Gio.Menu()
-        _sep.append("À propos de Mural", "win.about")
+        _sep.append(_("About Mural"), "win.about")
         app_menu.append_section(None, _sep)
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
@@ -192,17 +199,18 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         self._sidebar_toggle = Gtk.ToggleButton()
         self._sidebar_toggle.set_icon_name("sidebar-show-right-symbolic")
-        self._sidebar_toggle.set_active(True)
-        self._sidebar_toggle.set_tooltip_text("Panneau (Ctrl+B)")
+        self._sidebar_toggle.set_active(False)
+        self._sidebar_toggle.set_tooltip_text(_("Sidebar (Ctrl+B)"))
         self._sidebar_toggle.connect("toggled", self._on_sidebar_toggle)
         hb.pack_end(self._sidebar_toggle)
 
         self._split_view = Adw.OverlaySplitView()
         self._split_view.set_sidebar_position(Gtk.PackType.END)
-        self._split_view.set_sidebar_width_fraction(0.28)
-        self._split_view.set_min_sidebar_width(260)
-        self._split_view.set_max_sidebar_width(380)
-        self._split_view.set_show_sidebar(True)
+        self._split_view.set_sidebar_width_fraction(0.20)
+        self._split_view.set_min_sidebar_width(140)
+        self._split_view.set_max_sidebar_width(300)
+        self._split_view.set_show_sidebar(False)
+        self._split_view.set_enable_show_gesture(True)
         self._split_view.set_collapsed(False)
         toolbar_view = Adw.ToolbarView()
         toolbar_view.add_top_bar(hb)
@@ -216,13 +224,13 @@ class WallpaperApp(Adw.ApplicationWindow):
         main_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         main_vbox.set_hexpand(True)
         main_vbox.set_vexpand(True)
-        main_vbox.set_size_request(400, -1)
+        main_vbox.set_size_request(100, -1)
 
         search_bar = Gtk.SearchBar()
         search_bar.set_search_mode(False)
         search_bar.set_show_close_button(True)
         self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_placeholder_text("Rechercher\u2026")
+        self.search_entry.set_placeholder_text(_("Search\u2026"))
         self.search_entry.connect("search-changed", self._on_search_changed)
         search_bar.set_child(self.search_entry)
         search_bar.connect_entry(self.search_entry)
@@ -242,7 +250,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.preview.set_can_shrink(True)
         self.preview.set_hexpand(True)
         self.preview.set_vexpand(False)
-        self._preview_placeholder_label = Gtk.Label(label="S\u00e9lectionnez une image")
+        self._preview_placeholder_label = Gtk.Label(label=_("Select an image"))
         self._preview_placeholder_label.add_css_class("dim-label")
         self._preview_placeholder_label.set_halign(Gtk.Align.CENTER)
         self._preview_placeholder_label.set_valign(Gtk.Align.CENTER)
@@ -354,13 +362,13 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         tab_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         tab_bar.add_css_class("linked")
-        tab_bar.set_margin_start(10)
-        tab_bar.set_margin_end(10)
+        tab_bar.set_margin_start(4)
+        tab_bar.set_margin_end(4)
         tab_bar.set_margin_top(8)
         tab_bar.set_margin_bottom(8)
         self._tab_btns = {}
         first_tab_btn = None
-        for tab_id, tab_label in [("display","Affichage"),("slideshow","Slideshow"),("folders","Dossiers"),("avif","AVIF")]:
+        for tab_id, tab_label in [("display", _("Display")), ("slideshow", _("Slideshow")), ("folders", _("Folders")), ("avif", "AVIF")]:
             tb = Gtk.ToggleButton(label=tab_label)
             tb.set_hexpand(True)
             if first_tab_btn is None:
@@ -387,7 +395,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         b_disp.set_margin_start(12); b_disp.set_margin_end(12)
         b_disp.set_margin_top(12); b_disp.set_margin_bottom(16)
         if len(self.monitors) > 1:
-            g_sc = Adw.PreferencesGroup(title="\u00c9crans")
+            g_sc = Adw.PreferencesGroup(title=_("Monitors"))
             mb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             mb_box.set_margin_start(12); mb_box.set_margin_end(12)
             mb_box.set_margin_top(8); mb_box.set_margin_bottom(8)
@@ -396,7 +404,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             self.monitor_btns = []
             first_mb = None
             for i, mon in enumerate(self.monitors):
-                mlbl = f"\u00c9cran {i+1}" + (" \u2605" if mon.primary else "")
+                mlbl = f"{_('Monitor')} {i+1}" + (" \u2605" if mon.primary else "")
                 mb = Gtk.ToggleButton(label=mlbl)
                 mb.set_size_request(80, 36)
                 if i == 0:
@@ -416,7 +424,7 @@ class WallpaperApp(Adw.ApplicationWindow):
             mb_box.append(self.lbl_monitor)
 
             # SIGNAL AJOUTE ICI POUR SYNCHRONISER LA CASE
-            self.chk_same_all = Gtk.CheckButton(label="M\u00eame image sur tous")
+            self.chk_same_all = Gtk.CheckButton(label=_("Same image on all"))
             self.chk_same_all.set_active(True)
             self.chk_same_all.connect("toggled", self._on_same_all_toggled)
             mb_box.append(self.chk_same_all)
@@ -426,17 +434,17 @@ class WallpaperApp(Adw.ApplicationWindow):
         else:
             self.monitor_btns = []
             self.chk_same_all = None
-        g_opt = Adw.PreferencesGroup(title="Options")
+        g_opt = Adw.PreferencesGroup(title=_("Options"))
         mi_row = Adw.PreferencesRow()
         mi_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         mi_box.set_margin_start(12); mi_box.set_margin_end(12)
         mi_box.set_margin_top(8); mi_box.set_margin_bottom(8)
-        mi_lbl = Gtk.Label(label="Mode d'affichage")
+        mi_lbl = Gtk.Label(label=_("Display mode"))
         mi_lbl.set_xalign(0); mi_lbl.set_hexpand(True)
         mi_lbl.set_ellipsize(Pango.EllipsizeMode.END)
         mi_box.append(mi_lbl)
         self.mode_ids = [mid for mid, _ in GnomeBackend.MODES]
-        self.mode_dropdown = Gtk.DropDown.new_from_strings([ml for _, ml in GnomeBackend.MODES])
+        self.mode_dropdown = Gtk.DropDown.new_from_strings([_(ml) for mode_id, ml in GnomeBackend.MODES])
         self.mode_dropdown.set_selected(
             self.mode_ids.index(self.settings.mode) if self.settings.mode in self.mode_ids else 0
         )
@@ -444,7 +452,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.mode_dropdown.set_size_request(150, -1)
         mi_box.append(self.mode_dropdown)
         mi_row.set_child(mi_box); g_opt.add(mi_row)
-        lk_row = Adw.ActionRow(title="\u00c9cran de verrouillage", subtitle="Appliquer aussi \u00e0 l'\u00e9cran de verrouillage")
+        lk_row = Adw.ActionRow(title=_("Lock screen"), subtitle=_("Apply to lock screen as well"))
         self.chk_lock = Gtk.Switch()
         self.chk_lock.set_active(self.settings.lock_screen)
         self.chk_lock.set_valign(Gtk.Align.CENTER)
@@ -461,8 +469,8 @@ class WallpaperApp(Adw.ApplicationWindow):
         b_ss = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         b_ss.set_margin_start(12); b_ss.set_margin_end(12)
         b_ss.set_margin_top(12); b_ss.set_margin_bottom(16)
-        g_ss = Adw.PreferencesGroup(title="Slideshow")
-        ss_row = Adw.ActionRow(title="Changement automatique", subtitle="Change le fond toutes les X minutes")
+        g_ss = Adw.PreferencesGroup(title=_("Slideshow"))
+        ss_row = Adw.ActionRow(title=_("Automatic change"), subtitle=_("Change background every X minutes"))
         self.switch_slideshow = Gtk.Switch()
         self.switch_slideshow.set_active(self.settings.slideshow_enabled)
         self.switch_slideshow.set_valign(Gtk.Align.CENTER)
@@ -474,7 +482,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         iv_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         iv_box.set_margin_start(12); iv_box.set_margin_end(12)
         iv_box.set_margin_top(8); iv_box.set_margin_bottom(8)
-        iv_lbl = Gtk.Label(label="Intervalle (min)")
+        iv_lbl = Gtk.Label(label=_("Interval (min)"))
         iv_lbl.set_hexpand(True); iv_lbl.set_xalign(0)
         iv_box.append(iv_lbl)
         self.spin_interval = Gtk.SpinButton()
@@ -488,7 +496,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.spin_interval.connect("value-changed", self._on_interval_changed)
         iv_box.append(self.spin_interval)
         iv_row.set_child(iv_box); g_ss.add(iv_row)
-        rnd_row = Adw.ActionRow(title="Ordre al\u00e9atoire")
+        rnd_row = Adw.ActionRow(title=_("Random order"))
         self.switch_random = Gtk.Switch()
         self.switch_random.set_active(self.settings.slideshow_random)
         self.switch_random.set_valign(Gtk.Align.CENTER)
@@ -498,10 +506,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         g_ss.add(rnd_row)
         b_ss.append(g_ss)
         if len(self.monitors) > 1:
-            g_ssm = Adw.PreferencesGroup(title="Appliquer sur")
+            g_ssm = Adw.PreferencesGroup(title=_("Apply on"))
             self._slideshow_monitor_checks = {}
             for mon in self.monitors:
-                chk = Gtk.CheckButton(label=f"\u00c9cran {mon.name[:24]}")
+                chk = Gtk.CheckButton(label=f"{_('Monitor')} {mon.name[:24]}")
                 chk.set_active(not self.settings.slideshow_monitors or mon.connector in self.settings.slideshow_monitors)
                 chk.connect("toggled", self._on_slideshow_monitor_toggled, mon.connector)
                 self._slideshow_monitor_checks[mon.connector] = chk
@@ -517,7 +525,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.lbl_slideshow_count.set_margin_start(4)
         self._update_slideshow_count_label()
         b_ss.append(self.lbl_slideshow_count)
-        btn_next = Gtk.Button(label="\u23ed  Image suivante maintenant")
+        btn_next = Gtk.Button(label=_("\u23ed  Next image now"))
         btn_next.add_css_class("flat")
         btn_next.connect("clicked", lambda *_: self.slideshow.next())
         b_ss.append(btn_next)
@@ -530,58 +538,58 @@ class WallpaperApp(Adw.ApplicationWindow):
         b_fold = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         b_fold.set_margin_start(12); b_fold.set_margin_end(12)
         b_fold.set_margin_top(12); b_fold.set_margin_bottom(16)
+
+        # 1. Dossier Courant (Version Ultra-Clean)
+        g_cur = Adw.PreferencesGroup(title=_("Navigation"))
+        self.row_current_folder = Adw.ActionRow(title=_("Current folder"), subtitle=_("Loading..."))
+        self.row_current_folder.set_title_lines(1)
+        self.row_current_folder.set_subtitle_lines(3) # Permet au chemin d'être sur plusieurs lignes si besoin
+
+        btn_bm = Gtk.Button()
+        btn_bm.set_icon_name("bookmark-new-symbolic")
+        btn_bm.set_valign(Gtk.Align.CENTER)
+        btn_bm.add_css_class("flat") # Retire le gros fond gris du bouton
+        btn_bm.set_tooltip_text(_("Add to bookmarks"))
+        btn_bm.connect("clicked", self._on_add_bookmark)
+
+        self.btn_bookmarks = Gtk.MenuButton()
+        self.btn_bookmarks.set_icon_name("user-bookmarks-symbolic")
+        self.btn_bookmarks.set_valign(Gtk.Align.CENTER)
+        self.btn_bookmarks.add_css_class("flat")
+        self.btn_bookmarks.set_tooltip_text(_("My bookmarks"))
+        self._rebuild_bookmarks_menu()
+
+        self.row_current_folder.add_suffix(btn_bm)
+        self.row_current_folder.add_suffix(self.btn_bookmarks)
+        g_cur.add(self.row_current_folder)
+        b_fold.append(g_cur)
+
+        # 2. Raccourcis par écran (Version Allégée)
         if len(self.monitors) > 1:
-            g_fm = Adw.PreferencesGroup(title="Dossiers rapides")
+            g_fm = Adw.PreferencesGroup(title=_("Monitor Shortcuts"))
             for i, mon in enumerate(self.monitors):
                 fr = Adw.ActionRow(
-                    title=f"\u00c9cran {i+1} \u2014 {mon.name[:20]}",
-                    subtitle=self.settings.monitor_folders.get(mon.connector, "Non assign\u00e9")[-40:],
+                    title=f"{_('Monitor')} {i+1}",
+                    subtitle=self.settings.monitor_folders.get(mon.connector, _("Unassigned"))[-40:]
                 )
                 ba = Gtk.Button()
-                ba.set_child(Gtk.Image.new_from_icon_name("folder-symbolic"))
+                ba.set_icon_name("folder-symbolic")
                 ba.set_valign(Gtk.Align.CENTER)
+                ba.add_css_class("flat")
+                ba.set_tooltip_text(_("Assign default folder"))
                 ba.connect("clicked", self._on_assign_monitor_folder, mon.connector, fr)
-                fr.add_suffix(ba)
+
                 bl = Gtk.Button()
-                bl.set_child(Gtk.Image.new_from_icon_name("go-jump-symbolic"))
+                bl.set_icon_name("go-jump-symbolic")
                 bl.set_valign(Gtk.Align.CENTER)
+                bl.add_css_class("flat")
+                bl.set_tooltip_text(_("Open this folder"))
                 bl.connect("clicked", self._on_load_monitor_folder, mon.connector)
+
+                fr.add_suffix(ba)
                 fr.add_suffix(bl)
                 g_fm.add(fr)
             b_fold.append(g_fm)
-        g_cur = Adw.PreferencesGroup(title="Dossier courant")
-        fi_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        fi_box.set_margin_start(12); fi_box.set_margin_end(12)
-        fi_box.set_margin_top(8); fi_box.set_margin_bottom(8)
-        self.lbl_folder = Gtk.Label()
-        self.lbl_folder.set_wrap(True); self.lbl_folder.set_xalign(0)
-        self.lbl_folder.set_selectable(True); self.lbl_folder.set_max_width_chars(28)
-        fi_box.append(self.lbl_folder)
-        self.lbl_count = Gtk.Label()
-        self.lbl_count.set_xalign(0); self.lbl_count.add_css_class("dim-label")
-        fi_box.append(self.lbl_count)
-        fir = Adw.PreferencesRow(); fir.set_child(fi_box); g_cur.add(fir)
-        act_row = Adw.PreferencesRow()
-        act_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        act_box.set_margin_start(12); act_box.set_margin_end(12)
-        act_box.set_margin_top(6); act_box.set_margin_bottom(6)
-        btn_bm = Gtk.Button()
-        btn_bm.set_child(Gtk.Image.new_from_icon_name("list-add-symbolic"))
-        btn_bm.set_tooltip_text("Ajouter aux favoris")
-        btn_bm.connect("clicked", self._on_add_bookmark)
-        act_box.append(btn_bm)
-        self.btn_bookmarks = Gtk.MenuButton()
-        self.btn_bookmarks.set_child(Gtk.Image.new_from_icon_name("user-bookmarks-symbolic"))
-        self.btn_bookmarks.set_tooltip_text("Ouvrir un favori")
-        act_box.append(self.btn_bookmarks)
-        self._rebuild_bookmarks_menu()
-        self.btn_folder_slideshow = Gtk.ToggleButton()
-        self.btn_folder_slideshow.set_child(Gtk.Image.new_from_icon_name("starred-symbolic"))
-        self.btn_folder_slideshow.set_tooltip_text("Inclure dans le slideshow")
-        self.btn_folder_slideshow.connect("toggled", self._on_folder_slideshow_toggled)
-        act_box.append(self.btn_folder_slideshow)
-        act_row.set_child(act_box); g_cur.add(act_row)
-        b_fold.append(g_cur)
         p_fold.set_child(b_fold)
         self._tab_stack.add_named(p_fold, "folders")
 
@@ -591,13 +599,13 @@ class WallpaperApp(Adw.ApplicationWindow):
         b_avif = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         b_avif.set_margin_start(12); b_avif.set_margin_end(12)
         b_avif.set_margin_top(12); b_avif.set_margin_bottom(16)
-        g_avif = Adw.PreferencesGroup(title="Cache AVIF")
+        g_avif = Adw.PreferencesGroup(title=_("AVIF Cache"))
         self._avif_stats_label = Gtk.Label()
         self._avif_stats_label.set_xalign(0)
         self._avif_stats_label.add_css_class("dim-label")
         self._avif_stats_label.set_margin_start(12); self._avif_stats_label.set_margin_top(6)
         self._avif_stats_label.set_margin_bottom(2); self._avif_stats_label.set_wrap(True)
-        self._avif_stats_label.set_text("AVIF non disponible \u2014 installez imagemagick" if not AVIF_SUPPORTED else "Aucune info")
+        self._avif_stats_label.set_text(_("AVIF unavailable — install imagemagick") if not AVIF_SUPPORTED else _("No info"))
         _sr = Adw.PreferencesRow(); _sr.set_child(self._avif_stats_label); g_avif.add(_sr)
         self._avif_progress_bar = Gtk.ProgressBar()
         self._avif_progress_bar.set_hexpand(True)
@@ -615,21 +623,21 @@ class WallpaperApp(Adw.ApplicationWindow):
         avif_bb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         avif_bb.set_margin_start(12); avif_bb.set_margin_end(12)
         avif_bb.set_margin_top(6); avif_bb.set_margin_bottom(6)
-        self.btn_avif_convert = Gtk.Button(label="Convertir ce dossier")
+        self.btn_avif_convert = Gtk.Button(label=_("Convert this folder"))
         self.btn_avif_convert.add_css_class("suggested-action")
         self.btn_avif_convert.set_hexpand(True)
         self.btn_avif_convert.set_sensitive(AVIF_SUPPORTED)
         self.btn_avif_convert.connect("clicked", self._on_avif_convert)
-        self.btn_avif_cancel = Gtk.Button(label="Annuler")
+        self.btn_avif_cancel = Gtk.Button(label=_("Cancel"))
         self.btn_avif_cancel.set_visible(False)
         self.btn_avif_cancel.connect("clicked", lambda *_: self.avif_converter.cancel())
-        self.btn_avif_purge = Gtk.Button(label="Purger")
+        self.btn_avif_purge = Gtk.Button(label=_("Purge"))
         self.btn_avif_purge.add_css_class("destructive-action")
         self.btn_avif_purge.set_sensitive(AVIF_SUPPORTED)
         self.btn_avif_purge.connect("clicked", self._on_avif_purge)
         avif_bb.append(self.btn_avif_convert); avif_bb.append(self.btn_avif_cancel); avif_bb.append(self.btn_avif_purge)
         _abr = Adw.PreferencesRow(); _abr.set_child(avif_bb); g_avif.add(_abr)
-        ag_row = Adw.ActionRow(title="Utiliser l'AVIF pour le fond", subtitle="Applique l'AVIF \u00e0 GNOME si disponible")
+        ag_row = Adw.ActionRow(title=_("Use AVIF for background"), subtitle=_("Applies AVIF to GNOME if available"))
         self.switch_avif_gnome = Gtk.Switch()
         self.switch_avif_gnome.set_active(self.settings.avif_use_for_gnome)
         self.switch_avif_gnome.set_valign(Gtk.Align.CENTER)
@@ -643,6 +651,13 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._tab_stack.add_named(p_avif, "avif")
 
         self._tab_stack.set_visible_child_name("display")
+
+        # --- AJOUT AUTOHIDE (HOVER) ---
+        self._sidebar_auto_opened = False
+        self._is_auto_toggling = False
+        motion_ctrl = Gtk.EventControllerMotion.new()
+        motion_ctrl.connect("motion", self._on_pointer_motion)
+        self.add_controller(motion_ctrl)
 
     def _on_same_all_toggled(self, btn):
         """Fix 1 : Si on recoche la case, on sauvegarde virtuellement la sélection pour tous"""
@@ -659,7 +674,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._avif_progress_bar.set_visible(True)
         self._avif_progress_label.set_visible(True)
         self._avif_progress_bar.set_fraction(0)
-        self._avif_progress_label.set_text("Démarrage…")
+        self._avif_progress_label.set_text(_("Starting…"))
         from .config import Config
         self.avif_converter.convert_folder(
             folder=self.folder,
@@ -677,13 +692,13 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.btn_avif_convert.set_sensitive(True)
         self.btn_avif_cancel.set_visible(False)
         self._avif_progress_bar.set_fraction(1.0)
-        self._avif_progress_label.set_text(f"✓ {converted}/{total} images converties")
-        self._status(f"✓ AVIF: {converted}/{total} converties")
+        self._avif_progress_label.set_text(f"✓ {converted}/{total} " + _("images converted"))
+        self._status(f"✓ AVIF: {converted}/{total} " + _("images converted"))
 
     def _on_avif_purge(self, *_) -> None:
         removed = self.avif_converter.purge_folder(self.folder)
-        self._avif_progress_label.set_text(f"{removed} fichiers supprimés")
-        self._status(f"AVIF purgés: {removed} fichiers supprimés")
+        self._avif_progress_label.set_text(f"{removed} " + _("files deleted"))
+        self._status(f"AVIF: {removed} " + _("files deleted"))
 
     def _on_avif_gnome_toggle(self, switch, _param) -> None:
         self.settings.avif_use_for_gnome = switch.get_active()
@@ -694,7 +709,38 @@ class WallpaperApp(Adw.ApplicationWindow):
             self._tab_stack.set_visible_child_name(tab_id)
 
     def _on_sidebar_toggle(self, btn):
-        self._split_view.set_show_sidebar(btn.get_active())
+        is_active = btn.get_active()
+        self._split_view.set_show_sidebar(is_active)
+        
+        # Si l'utilisateur clique manuellement, on annule le mode "auto"
+        # Ça permet de "verrouiller" le panneau ouvert !
+        if not getattr(self, "_is_auto_toggling", False):
+            self._sidebar_auto_opened = btn.get_active()
+
+    def _on_pointer_motion(self, controller, x, y) -> None:
+        # On désactive la détection si la fenêtre est réduite en mode "mobile"
+        if self._split_view.get_collapsed():
+            return 
+
+        win_width = self.get_width()
+        is_open = self._split_view.get_show_sidebar()
+        
+        # 1. OUVERTURE : Si la souris frôle le bord droit (à 10px près)
+        if not is_open and x >= win_width - 10:
+            self._sidebar_auto_opened = True
+            self._is_auto_toggling = True # Empêche de déclencher le mode "manuel"
+            self._sidebar_toggle.set_active(True)
+            self._is_auto_toggling = False
+            
+        # 2. FERMETURE : Si on quitte le panneau vers la gauche
+        elif is_open and getattr(self, "_sidebar_auto_opened", False):
+            sidebar_w = self._sidebar.get_width()
+            # Marge de 20px pour éviter qu'il ne se ferme par accident
+            if x < win_width - sidebar_w - 20:
+                self._sidebar_auto_opened = False
+                self._is_auto_toggling = True
+                self._sidebar_toggle.set_active(False)
+                self._is_auto_toggling = False
 
     def _ensure_slideshow_css(self) -> None:
         if self._slideshow_css_added:
@@ -724,8 +770,8 @@ class WallpaperApp(Adw.ApplicationWindow):
         if getattr(self, "_primary_menu", None):
             return
         self._primary_menu = Gio.Menu()
-        self._primary_menu.append("Importer…", "win.import")
-        self._primary_menu.append("Supprimer", "win.remove")
+        self._primary_menu.append(_("Import…"), "win.import")
+        self._primary_menu.append(_("Remove"), "win.remove")
 
         noop = Gio.SimpleAction.new("noop", None)
         self.get_application().add_action(noop)
@@ -735,6 +781,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._register_action("thumb_copy_path", self._on_thumb_copy_path, None)
         self._register_action("thumb_slideshow_add", self._on_thumb_slideshow_add, None)
         self._register_action("thumb_slideshow_remove", self._on_thumb_slideshow_remove, None)
+        self._register_action("thumb_delete_disk", self._on_thumb_delete_disk, None)
         self._register_action("import", self._menu_import, "<Primary>O")
         self._register_action("remove", self._menu_remove, "Delete")
         self._register_action("refresh", lambda *_: self._load_gallery(), "<Primary>R")
@@ -766,22 +813,32 @@ class WallpaperApp(Adw.ApplicationWindow):
         if getattr(self, "thumb_menu", None):
             return
         menu = Gio.Menu()
-        menu.append("Définir comme fond", "win.thumb_set")
-        menu.append("Ouvrir dans Fichiers", "win.thumb_reveal")
-        menu.append("Copier le chemin", "win.thumb_copy_path")
-        menu.append("Ajouter au slideshow", "win.thumb_slideshow_add")
-        menu.append("Retirer du slideshow", "win.thumb_slideshow_remove")
+        menu.append(_("Set as background"), "win.thumb_set")
+        menu.append(_("Open in Files"), "win.thumb_reveal")
+        menu.append(_("Copy path"), "win.thumb_copy_path")
+        
+        # Section gestionnaire (comme "Retirer de la liste")
+        sec_slideshow = Gio.Menu()
+        sec_slideshow.append("⭐ " + _("Add to slideshow"), "win.thumb_slideshow_add")
+        sec_slideshow.append("❌ " + _("Remove from slideshow"), "win.thumb_slideshow_remove")
+        menu.append_section(None, sec_slideshow)
+        
+        # Section disque dur (comme "Supprimer de la liste ET du disque")
+        sec_danger = Gio.Menu()
+        sec_danger.append("🗑️ " + _("Delete from disk"), "win.thumb_delete_disk")
+        menu.append_section(None, sec_danger)
+        
         self.thumb_menu = Gtk.PopoverMenu.new_from_model(menu)
 
     def _menu_import(self, action, param):
         self._on_choose_folder(None)
 
     def _menu_remove(self, action, param):
-        self._status("Action " + action.get_name() + " non implémentée")
+        self._status(_("Action {} not implemented").format(action.get_name()))
 
     def _monitor_markup(self, idx: int) -> str:
         m = self.monitors[idx]
-        primary = " <b>(principal)</b>" if m.primary else ""
+        primary = f" <b>({_('primary')})</b>" if m.primary else ""
         return (
             f"<small>{m.name}{primary}\n"
             f"{m.width} × {m.height} — pos({m.x}, {m.y})</small>"
@@ -832,7 +889,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         if hasattr(self, "_btn_apply_subtitle"):
             self._btn_apply_subtitle.set_visible(False)
         if hasattr(self, "_btn_apply_title"):
-            self._btn_apply_title.set_text("Définir comme fond")
+            self._btn_apply_title.set_text(_("Set as background"))
         self.preview.set_paintable(None)
         self.lbl_name.set_visible(False)
         self.lbl_size.set_visible(False)
@@ -862,28 +919,20 @@ class WallpaperApp(Adw.ApplicationWindow):
             conn = self.monitors[self.current_monitor].connector
             self.settings.per_monitor[conn] = path
 
-        self._status(f"Sélectionné: {Path(path).name}")
+        self._status(f"{_('Selected')}: {Path(path).name}")
         self._update_apply_btn_subtitle()
 
     def _update_apply_btn_subtitle(self) -> None:
-        if not hasattr(self, "_btn_apply_subtitle"):
+        if not self.monitors:
+            self.btn_apply.set_label(_("Set as background"))
             return
-        mon = self.monitors[self.current_monitor] if self.monitors else None
-        mode_label = ""
-        if hasattr(self, "mode_dropdown") and hasattr(self, "mode_ids"):
-            try:
-                mode_id = self.mode_ids[self.mode_dropdown.get_selected()]
-                mode_label = dict(self.backend.MODES).get(mode_id, mode_id)
-            except Exception:
-                pass
-        if mon:
-            same_all = self.chk_same_all.get_active() if self.chk_same_all else True
-            screen_label = "Tous les écrans" if (same_all or len(self.monitors) <= 1) else f"Écran {self.current_monitor + 1}"
-            subtitle = f"{screen_label} · {mode_label}" if mode_label else screen_label
-            self._btn_apply_subtitle.set_text(subtitle)
-            self._btn_apply_subtitle.set_visible(True)
+
+        same_all = self.chk_same_all.get_active() if self.chk_same_all else True
+        
+        if same_all or len(self.monitors) <= 1:
+            self.btn_apply.set_label(_("Apply (All)"))
         else:
-            self._btn_apply_subtitle.set_visible(False)
+            self.btn_apply.set_label(_("Apply (Monitor {})").format(self.current_monitor + 1))
 
     def _set_selected_child(self, child: Optional[Gtk.FlowBoxChild]) -> None:
         if self._selected_child and self._selected_child is not child:
@@ -898,10 +947,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._schedule_save()
         if enabled:
             self.slideshow.start()
-            self._status("⏱ Slideshow activé")
+            self._status("⏱ " + _("Slideshow enabled"))
         else:
             self.slideshow.stop()
-            self._status("Slideshow désactivé")
+            self._status(_("Slideshow disabled"))
 
     def _on_interval_changed(self, spin) -> None:
         self.settings.slideshow_interval = int(spin.get_value())
@@ -948,14 +997,14 @@ class WallpaperApp(Adw.ApplicationWindow):
         if getattr(self, "_daemon", None) and self._daemon.available:
             ok = self._daemon.set_wallpaper(path)
             if not ok:
-                self._status("✗ Échec via daemon — fallback local")
+                self._status("✗ " + _("Daemon failed — local fallback"))
                 ok = self.backend.apply_single(path, mode, lock)
         else:
             ok = self.backend.apply_single(path, mode, lock)
         if ok:
-            self._status(f"✓ Appliqué: {Path(path).name} ({mode})")
+            self._status(f"✓ {_('Applied')}: {Path(path).name} ({mode})")
         else:
-            self._status("✗ Erreur d'application")
+            self._status("✗ " + _("Application error"))
 
     def _on_thumb_reveal(self, action, param):
         path = self._context_path
@@ -965,7 +1014,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         try:
             Gio.AppInfo.launch_default_for_uri(uri, None)
         except Exception:
-            self._status("✗ Ouverture impossible")
+            self._status("✗ " + _("Cannot open"))
 
     def _on_thumb_copy_path(self, action, param):
         path = self._context_path
@@ -976,9 +1025,9 @@ class WallpaperApp(Adw.ApplicationWindow):
             if display:
                 clipboard = display.get_clipboard()
                 clipboard.set_text(path)
-                self._status("Chemin copié")
+                self._status(_("Path copied"))
         except Exception:
-            self._status("✗ Copie impossible")
+            self._status("✗ " + _("Copy failed"))
 
     def _on_thumb_slideshow_add(self, action, param) -> None:
         path = self._context_path
@@ -988,7 +1037,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
-        self._status(f"✓ Ajouté au slideshow: {Path(path).name}")
+        self._status(f"✓ {_('Added to slideshow')}: {Path(path).name}")
 
     def _on_thumb_slideshow_remove(self, action, param) -> None:
         path = self._context_path
@@ -998,21 +1047,44 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
-        self._status(f"Retiré du slideshow: {Path(path).name}")
+        self._status(f"{_('Removed from slideshow')}: {Path(path).name}")
 
-    def _on_folder_slideshow_toggled(self, btn: Gtk.ToggleButton) -> None:
-        folder = str(self.folder)
-        new_state = self.settings.toggle_folder_slideshow(folder)
-        btn.handler_block_by_func(self._on_folder_slideshow_toggled)
-        btn.set_active(new_state)
-        btn.handler_unblock_by_func(self._on_folder_slideshow_toggled)
-        self._schedule_save()
-        self._refresh_active_indicators()
-        self._update_slideshow_count_label()
-        if new_state:
-            self._status("✓ Dossier ajouté au slideshow")
-        else:
-            self._status("Dossier retiré du slideshow")
+    def _on_thumb_delete_disk(self, action, param) -> None:
+        path = self._context_path
+        if not path or not Path(path).exists():
+            return
+            
+        # Fenêtre de confirmation de sécurité
+        dialog = Gtk.AlertDialog()
+        dialog.set_message(_("Permanent deletion"))
+        dialog.set_detail(_("Do you really want to delete this image from your hard drive?") + f"\n\n{Path(path).name}")
+        dialog.set_buttons([_("Cancel"), _("Delete")])
+        dialog.set_cancel_button(0)
+        dialog.set_default_button(1)
+
+        def _on_response(dlg, res):
+            try:
+                response = dlg.choose_finish(res)
+            except GLib.Error:
+                return
+            if response == 1: # Si l'utilisateur clique sur "Supprimer"
+                try:
+                    Path(path).unlink() # Supprime physiquement le fichier
+                    self._status(f"🗑️ {_('File deleted')}: {Path(path).name}")
+                    
+                    # Nettoyage de la base de données interne de Mural
+                    self.settings.remove_from_slideshow(path)
+                    for conn, p in list(self.settings.per_monitor.items()):
+                        if p == path:
+                            del self.settings.per_monitor[conn]
+                    self._schedule_save()
+                    
+                    # Recharge la galerie pour faire disparaître la miniature
+                    self._load_gallery()
+                except Exception as e:
+                    self._status(f"✗ {_('Deletion error')}: {e}")
+
+        dialog.choose(self, None, _on_response)
 
     def _on_add_bookmark(self, *_) -> None:
         folder = str(self.folder)
@@ -1020,9 +1092,9 @@ class WallpaperApp(Adw.ApplicationWindow):
             self.settings.folder_bookmarks.append(folder)
             self._schedule_save()
             self._rebuild_bookmarks_menu()
-            self._status(f"✓ Favori ajouté: {self.folder.name}")
+            self._status(f"✓ {_('Bookmark added')}: {self.folder.name}")
         else:
-            self._status("Dossier déjà dans les favoris")
+            self._status(_("Folder already in bookmarks"))
 
     def _rebuild_bookmarks_menu(self) -> None:
         for name in self._bookmark_action_names:
@@ -1037,7 +1109,7 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         if not bookmarks:
             section = Gio.Menu()
-            section.append("Aucun favori", None)
+            section.append(_("No bookmarks"), None)
             menu.append_section(None, section)
         else:
             for i, path in enumerate(bookmarks):
@@ -1050,7 +1122,7 @@ class WallpaperApp(Adw.ApplicationWindow):
                 menu.append(name, f"win.{action_id}")
 
             sep_section = Gio.Menu()
-            sep_section.append("Retirer le dossier actuel", "win.bookmark_remove_current")
+            sep_section.append(_("Remove current folder"), "win.bookmark_remove_current")
             menu.append_section(None, sep_section)
 
         try:
@@ -1067,7 +1139,7 @@ class WallpaperApp(Adw.ApplicationWindow):
     def _jump_to_folder(self, path: str) -> None:
         folder = Path(path)
         if not folder.exists():
-            self._status(f"✗ Dossier introuvable: {folder.name}")
+            self._status(f"✗ {_('Folder not found')}: {folder.name}")
             return
         self._set_selected_folder(Gio.File.new_for_path(str(folder)))
 
@@ -1077,9 +1149,9 @@ class WallpaperApp(Adw.ApplicationWindow):
             self.settings.folder_bookmarks.remove(folder)
             self._schedule_save()
             self._rebuild_bookmarks_menu()
-            self._status(f"Favori retiré: {self.folder.name}")
+            self._status(f"{_('Bookmark removed')}: {self.folder.name}")
         else:
-            self._status("Ce dossier n'est pas dans les favoris")
+            self._status(_("This folder is not in bookmarks"))
 
     def _on_assign_monitor_folder(self, btn, connector: str, row: Adw.ActionRow) -> None:
         def _on_folder_chosen(dialog, result):
@@ -1092,14 +1164,14 @@ class WallpaperApp(Adw.ApplicationWindow):
                 self.settings.monitor_folders[connector] = path
                 self._schedule_save()
                 row.set_subtitle(path[-40:])
-                self._status(f"✓ Dossier assigné à l'écran {connector}")
+                self._status(f"✓ {_('Folder assigned to monitor')} {connector}")
         if hasattr(Gtk, "FileDialog"):
             dialog = Gtk.FileDialog()
-            dialog.set_title("Choisir le dossier de cet écran")
+            dialog.set_title(_("Choose folder for this monitor"))
             dialog.select_folder(self, None, _on_folder_chosen)
         else:
             dialog = Gtk.FileChooserNative(
-                title="Choisir le dossier",
+                title=_("Choose a folder"),
                 transient_for=self,
                 action=Gtk.FileChooserAction.SELECT_FOLDER,
             )
@@ -1112,7 +1184,7 @@ class WallpaperApp(Adw.ApplicationWindow):
     def _on_load_monitor_folder(self, btn, connector: str) -> None:
         path = self.settings.monitor_folders.get(connector, "")
         if not path or not Path(path).exists():
-            self._status(f"✗ Aucun dossier assigné à cet écran — cliquez d'abord sur l'icône dossier")
+            self._status("✗ " + _("No folder assigned to this monitor — click the folder icon first"))
             return
         for i, mon in enumerate(self.monitors):
             if mon.connector == connector:
@@ -1134,7 +1206,7 @@ class WallpaperApp(Adw.ApplicationWindow):
                 self.settings.monitor_folders[connector] = path
                 self._schedule_save()
                 row.set_subtitle(path[-40:])
-                self._status(f"✓ Dossier assigné à l'écran {connector}")
+                self._status(f"✓ {_('Folder assigned to monitor')} {connector}")
         dialog.destroy()
         self._file_dialog = None
 
@@ -1143,32 +1215,15 @@ class WallpaperApp(Adw.ApplicationWindow):
             return
         playlist = self.settings.resolve_slideshow_playlist()
         n = len(playlist)
-        folders = len(self.settings.slideshow_folders)
-        manual = len(self.settings.slideshow_images)
-        parts = []
-        if folders:
-            parts.append(f"{folders} dossier{'s' if folders > 1 else ''}")
-        if manual:
-            suffix = "s" if manual > 1 else ""
-            parts.append(f"{manual} image{suffix} manuelle{suffix}")
-        if parts:
-            self.lbl_slideshow_count.set_text(f"{n} image{'s' if n != 1 else ''} ({', '.join(parts)})")
+        if n > 0:
+            self.lbl_slideshow_count.set_text(_("{} image{} in list").format(n, "s" if n > 1 else ""))
         else:
-            self.lbl_slideshow_count.set_text("Aucune image sélectionnée")
+            self.lbl_slideshow_count.set_text(_("No image selected"))
 
     def _sync_flowbox(self):
         self.flowbox.invalidate_filter()
         self.flowbox.queue_resize()
         self._schedule_flowbox_column_update()
-
-    def _sync_folder_slideshow_btn(self) -> None:
-        if not hasattr(self, "btn_folder_slideshow"):
-            return
-        folder = str(self.folder)
-        active = folder in self.settings.slideshow_folders
-        self.btn_folder_slideshow.handler_block_by_func(self._on_folder_slideshow_toggled)
-        self.btn_folder_slideshow.set_active(active)
-        self.btn_folder_slideshow.handler_unblock_by_func(self._on_folder_slideshow_toggled)
 
     def _init_shortcuts(self):
         controller = Gtk.EventControllerKey.new()
@@ -1191,12 +1246,12 @@ class WallpaperApp(Adw.ApplicationWindow):
         available = max(0, width - margin)
         spacing = self.flowbox.get_column_spacing()
 
-        for target in [220, 200, 180, 160, 140, 120]:
+        for target in [180, 150, 120, 100, 80]:
             cols = max(1, (available + spacing) // (target + spacing))
             if cols >= 2:
                 break
 
-        thumb_w = max(100, (available - spacing * (cols - 1)) // cols)
+        thumb_w = max(60, (available - spacing * (cols - 1)) // cols)
         thumb_h = max(1, int(round(thumb_w * Config.THUMBNAIL_ASPECT)))
 
         if (cols != self._flowbox_columns or thumb_w != Config.THUMB_W):
@@ -1204,10 +1259,8 @@ class WallpaperApp(Adw.ApplicationWindow):
             Config.THUMB_W = thumb_w
             Config.THUMB_H = thumb_h
             Config.THUMBNAIL_SIZE = thumb_w
-            self.flowbox.set_min_children_per_line(cols)
+            self.flowbox.set_min_children_per_line(4)
             self.flowbox.set_max_children_per_line(cols)
-            if abs(thumb_w - Config.THUMBNAIL_SIZE) > 20:
-                GLib.idle_add(self._load_gallery)
 
         return False
 
@@ -1280,9 +1333,13 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         threading.Thread(target=_load_dims, daemon=True).start()
 
+    def _update_folder_count(self, total: int):
+        if hasattr(self, "row_current_folder"):
+            self.row_current_folder.set_subtitle(f"{self.folder}\n{total} " + (_("images") if total > 1 else _("image")))
+
     def _init_state(self):
-        self.lbl_folder.set_text(str(self.folder))
-        current = self.backend.get_current()
+        self.row_current_folder.set_subtitle(str(self.folder))
+        current = self.backend.get_current() if self.backend else None
         if current and Path(current).exists():
             self.selected_image = current
             self.btn_apply.set_sensitive(True)
@@ -1290,11 +1347,10 @@ class WallpaperApp(Adw.ApplicationWindow):
             self._update_image_info(current)
             self._set_active_wallpapers([current])
 
-        mode = self.backend.get_mode()
+        mode = self.backend.get_mode() if self.backend else None
         if mode:
             if mode in self.mode_ids:
                 self.mode_dropdown.set_selected(self.mode_ids.index(mode))
-        self._sync_folder_slideshow_btn()
 
 
     def _on_monitor_toggle(self, btn, index: int) -> None:
@@ -1350,20 +1406,20 @@ class WallpaperApp(Adw.ApplicationWindow):
         if assigned_folder and Path(assigned_folder).exists():
             if str(self.folder) != assigned_folder:
                 self._jump_to_folder(assigned_folder)
-                self._status(f"Écran {index + 1} — dossier: {Path(assigned_folder).name}")
+                self._status(f"{_('Monitor')} {index + 1} — {_('folder')}: {Path(assigned_folder).name}")
         else:
-            self._status(f"Écran {index + 1} sélectionné")
+            self._status(f"{_('Monitor')} {index + 1} {_('selected')}")
 
 
     def _on_choose_folder(self, widget):
         if hasattr(Gtk, "FileDialog"):
             dialog = Gtk.FileDialog()
-            dialog.set_title("Choisir un dossier")
+            dialog.set_title(_("Choose a folder"))
             dialog.select_folder(self, None, self._on_choose_folder_dialog)
             return
 
         dialog = Gtk.FileChooserNative(
-            title="Choisir un dossier",
+            title=_("Choose a folder"),
             transient_for=self,
             action=Gtk.FileChooserAction.SELECT_FOLDER,
         )
@@ -1375,9 +1431,8 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.folder = Path(folder.get_path())
         self.settings.folder = str(self.folder)
         self._schedule_save()
-        self.lbl_folder.set_text(str(self.folder))
+        self.row_current_folder.set_subtitle(str(self.folder))
         self._load_gallery()
-        self._sync_folder_slideshow_btn()
 
     def _on_choose_folder_dialog(self, dialog, result):
         try:
@@ -1401,9 +1456,9 @@ class WallpaperApp(Adw.ApplicationWindow):
 
     def _on_clear_cache(self, widget):
         dialog = Gtk.AlertDialog()
-        dialog.set_message("Vider le cache des miniatures ?")
-        dialog.set_detail("Elles seront recréées au prochain chargement.")
-        dialog.set_buttons(["Annuler", "Vider"])
+        dialog.set_message(_("Clear thumbnail cache?"))
+        dialog.set_detail(_("They will be recreated on next load."))
+        dialog.set_buttons([_("Cancel"), _("Clear")])
         dialog.set_default_button(1)
         dialog.set_cancel_button(0)
         dialog.choose(self, None, self._on_clear_cache_response)
@@ -1423,7 +1478,7 @@ class WallpaperApp(Adw.ApplicationWindow):
                     count += 1
                 except Exception:
                     pass
-            self._status(f"Cache vidé ({count} fichiers)")
+            self._status(f"{_('Cache cleared')} ({count} {_('files')})")
             self._load_gallery()
 
     def _on_gallery_click(self, flowbox, child):
@@ -1445,7 +1500,7 @@ class WallpaperApp(Adw.ApplicationWindow):
         """Fix 4 : Toujours forcer le Universal Canvas si on a plus d'un écran."""
         if not self.selected_image or not Path(self.selected_image).exists():
             dialog = Gtk.AlertDialog()
-            dialog.set_message("Aucune image sélectionnée")
+            dialog.set_message(_("No image selected"))
             dialog.set_buttons(["OK"])
             dialog.choose(self, None, lambda *_: None)
             return
@@ -1463,11 +1518,11 @@ class WallpaperApp(Adw.ApplicationWindow):
                 or not Path(self.settings.per_monitor[mon.connector]).exists()
             ]
             if missing:
-                self._status(f"⚠ Images manquantes : {', '.join(missing)}")
+                self._status(f"⚠ {_('Missing images:')} {', '.join(missing)}")
                 return
 
         self.btn_apply.set_sensitive(False)
-        self._status("Application en cours…")
+        self._status(_("Applying…"))
         image = self.selected_image
         monitors_snapshot = list(self.monitors)
         per_monitor_snapshot = dict(self.settings.per_monitor)
@@ -1493,15 +1548,15 @@ class WallpaperApp(Adw.ApplicationWindow):
                 ok = ok_count == total
                 active_paths = list(assignments.values())
                 status_msg = (
-                    f"✓ Appliqué sur {ok_count}/{total} écrans"
-                    if ok else f"⚠ Canvas partiel: {ok_count}/{total} écrans"
+                    f"✓ {_('Applied on')} {ok_count}/{total} {_('monitors')}"
+                    if ok else f"⚠ {_('Partial canvas:')} {ok_count}/{total} {_('monitors')}"
                 )
             else:
                 # Si l'utilisateur n'a physiquement qu'un seul écran
                 if getattr(self, "_daemon", None) and self._daemon.available:
                     ok = self._daemon.set_wallpaper(image)
                     if not ok:
-                        GLib.idle_add(self._status, "✗ daemon — fallback local")
+                        GLib.idle_add(self._status, "✗ " + _("daemon — local fallback"))
                         ok = self.backend.apply_single(image, mode=mode, lock=lock)
                 else:
                     ok = self.backend.apply_single(image, mode=mode, lock=lock)
@@ -1509,9 +1564,9 @@ class WallpaperApp(Adw.ApplicationWindow):
                     active_paths = [image]
                     for mon in monitors_snapshot:
                         self.settings.per_monitor[mon.connector] = image
-                    status_msg = f"✓ Appliqué: {Path(image).name}"
+                    status_msg = f"✓ {_('Applied')}: {Path(image).name}"
                 else:
-                    status_msg = "✗ Échec de l'application"
+                    status_msg = "✗ " + _("Application failed")
 
             GLib.idle_add(self._on_apply_done, ok, image, active_paths, mode, lock, status_msg)
 
@@ -1523,10 +1578,10 @@ class WallpaperApp(Adw.ApplicationWindow):
         self._status(status_msg)
         if ok:
             self._set_active_wallpapers(active_paths)
-            self._btn_apply_title.set_text("✓ Appliqué !")
+            self.btn_apply.set_label(_("✓ Applied!"))
             GLib.timeout_add(
                 2500,
-                lambda: (self._btn_apply_title.set_text("Définir comme fond"), False)[-1]
+                lambda: (self._update_apply_btn_subtitle(), False)[-1]
             )
         self.settings.mode = mode
         self.settings.lock_screen = lock
@@ -1547,7 +1602,7 @@ class WallpaperApp(Adw.ApplicationWindow):
 
         self._gallery_progressbar.set_fraction(0)
         self._set_progress_visibility(True)
-        self._status("Chargement…")
+        self._status(_("Loading..."))
 
         self.gallery_generation += 1
         generation = self.gallery_generation
@@ -1560,7 +1615,7 @@ class WallpaperApp(Adw.ApplicationWindow):
 
     def _gallery_worker(self, folder: Path, generation: int, stop_event: threading.Event):
         if not folder.exists():
-            GLib.idle_add(self._status, "Dossier introuvable")
+            GLib.idle_add(self._status, _("Folder not found"))
             GLib.idle_add(self._set_progress_visibility, False)
             return
         try:
@@ -1569,14 +1624,14 @@ class WallpaperApp(Adw.ApplicationWindow):
                 if f.is_file() and f.suffix.lower() in Config.VALID_EXT
             )[:Config.MAX_IMAGES]
         except PermissionError:
-            GLib.idle_add(self._status, "Permission refusee")
+            GLib.idle_add(self._status, _("Permission denied"))
             GLib.idle_add(self._set_progress_visibility, False)
             return
 
         total = len(files)
-        GLib.idle_add(self.lbl_count.set_text, f"{total} images")
+        GLib.idle_add(self._update_folder_count, total)
         if total == 0:
-            GLib.idle_add(self._status, "Aucune image trouvee")
+            GLib.idle_add(self._status, _("No images found"))
             GLib.idle_add(self._set_progress_visibility, False)
             return
 
@@ -1696,7 +1751,7 @@ class WallpaperApp(Adw.ApplicationWindow):
 
     def _gallery_done(self, total):
         self._set_progress_visibility(False)
-        self._status(f"✓ {total} images — {self.folder.name}")
+        self._status(f"✓ {total} " + _("images") + f" — {self.folder.name}")
         child = self.flowbox.get_first_child()
         if child:
             self.flowbox.select_child(child)
@@ -1734,11 +1789,11 @@ class WallpaperApp(Adw.ApplicationWindow):
         self.monitors = MonitorDetector.detect()
         n = len(self.monitors)
         self._title_widget.set_subtitle(
-            f"{n} écran{'s' if n > 1 else ''} détecté{'s' if n > 1 else ''}"
+            f"{n} " + (_("screens") if n > 1 else _("screen")) + " " + _("detected")
         )
         if self.current_monitor >= len(self.monitors):
             self.current_monitor = 0
-        self._status(f"Écrans mis à jour: {n} détecté{'s' if n > 1 else ''}")
+        self._status(_("Monitors updated: {} detected").format(n))
 
     @property
     def current_mode(self) -> str:
@@ -1773,3 +1828,30 @@ class WallpaperApp(Adw.ApplicationWindow):
                 self.settings.window_height = h
         self.config.save(self.settings)
         return False
+
+class MuralApplication(Adw.Application):
+    def __init__(self, **kwargs):
+        super().__init__(application_id="io.github.gaorfg-bit.Mural", **kwargs)
+
+    def do_activate(self):
+        """Cette méthode est appelée au lancement de 'mural'"""
+        try:
+            print("DEBUG: Entrée dans do_activate")
+            
+            # On cherche si une fenêtre existe déjà
+            win = self.get_active_window()
+            
+            if not win:
+                print("DEBUG: Création d'une nouvelle fenêtre MuralWindow")
+                # Assure-toi que ta classe de fenêtre s'appelle bien MuralWindow
+                win = MuralWindow(application=self)
+            
+            print("DEBUG: Affichage de la fenêtre (present)")
+            win.present() # C'est CETTE ligne qui empêche le programme de quitter direct
+        except Exception as e:
+            # C'est ça qui va nous donner la vraie raison du crash
+            print("\n" + "!"*50)
+            print("💥 CRASH FATAL DANS L'INTERFACE :")
+            traceback.print_exc()
+            print("!"*50 + "\n")
+            self.quit()

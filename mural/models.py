@@ -48,71 +48,24 @@ class WallpaperSettings:
     def resolve_slideshow_playlist(self) -> List[str]:
         """
         Retourne la liste finale des images pour le slideshow.
-        Ordre de priorité :
-        1. Toutes les images des dossiers inclus (slideshow_folders)
-           sauf celles dans slideshow_excluded
-        2. + Les images individuelles (slideshow_images)
-        Dédupliqué, fichiers existants uniquement.
+        Mode 100% Manuel : Seules les images ajoutées une à une sont lues.
         """
         result: set[str] = set()
-
-        for folder_str in self.slideshow_folders:
-            folder = Path(folder_str)
-            if not folder.exists():
-                continue
-            try:
-                from .config import Config
-                for f in folder.iterdir():
-                    if f.is_file() and f.suffix.lower() in Config.VALID_EXT:
-                        p = str(f)
-                        if p not in self.slideshow_excluded:
-                            result.add(p)
-            except Exception:
-                pass
-
         for img in self.slideshow_images:
             if Path(img).exists():
                 result.add(img)
-
         return sorted(result)
 
     def is_in_slideshow(self, path: str) -> bool:
-        """Retourne True si cette image fait partie du slideshow."""
-        if path in self.slideshow_images:
-            return True
-        if path in self.slideshow_excluded:
-            return False
-        parent = str(Path(path).parent)
-        return parent in self.slideshow_folders
+        """Retourne True uniquement si l'image a été ajoutée manuellement."""
+        return path in self.slideshow_images
 
     def add_to_slideshow(self, path: str) -> None:
-        """Ajoute une image au slideshow."""
-        parent = str(Path(path).parent)
-        if parent in self.slideshow_folders:
-            if path in self.slideshow_excluded:
-                self.slideshow_excluded.remove(path)
-        else:
-            if path not in self.slideshow_images:
-                self.slideshow_images.append(path)
+        """Ajoute une image à la liste de lecture."""
+        if path not in self.slideshow_images:
+            self.slideshow_images.append(path)
 
     def remove_from_slideshow(self, path: str) -> None:
-        """Retire une image du slideshow."""
-        parent = str(Path(path).parent)
+        """Retire une image de la liste de lecture."""
         if path in self.slideshow_images:
             self.slideshow_images.remove(path)
-        if parent in self.slideshow_folders:
-            if path not in self.slideshow_excluded:
-                self.slideshow_excluded.append(path)
-
-    def toggle_folder_slideshow(self, folder: str) -> bool:
-        """Bascule un dossier dans/hors du slideshow. Retourne le nouvel état."""
-        if folder in self.slideshow_folders:
-            self.slideshow_folders.remove(folder)
-            self.slideshow_excluded = [
-                p for p in self.slideshow_excluded
-                if str(Path(p).parent) != folder
-            ]
-            return False
-        else:
-            self.slideshow_folders.append(folder)
-            return True

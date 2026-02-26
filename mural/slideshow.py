@@ -41,61 +41,36 @@ class SlideshowManager:
 
     def _tick(self) -> bool:
         playlist = self._app.settings.resolve_slideshow_playlist()
-        if not playlist:
-            self._app._status("⚠ Slideshow : aucune image sélectionnée")
+        if not playlist: 
             return True
 
+        # Logique de sélection
         if self._app.settings.slideshow_random:
             import random
-            half = max(1, len(playlist) // 2)
-            choices = [p for p in playlist if p not in self._history[-half:]]
-            if not choices:
-                self._history.clear()
-                choices = playlist
-            path = random.choice(choices)
-            self._history.append(path)
+            path = random.choice(playlist)
         else:
             self._sequential_index %= len(playlist)
             path = playlist[self._sequential_index]
             self._sequential_index += 1
 
-        mode = self._app.mode_ids[self._app.mode_dropdown.get_selected()]
-        lock = self._app.chk_lock.get_active()
-        target_monitors = self._app.settings.slideshow_monitors
-        if not target_monitors:
-            # Tous les écrans — image unique globale — traitement dans un thread séparé
-            def _apply_single_async():
-                if getattr(self._app, "_daemon", None) and self._app._daemon.available:
-                    ok = self._app._daemon.set_wallpaper(path)
-                    if not ok:
-                        GLib.idle_add(
-                            self._app._status,
-                            "✗ Slideshow daemon — fallback local"
-                        )
-                        ok = self._app.backend.apply_single(
-                            path, mode=mode, lock=lock
-                        )
-                else:
-                    ok = self._app.backend.apply_single(
-                        path, mode=mode, lock=lock
-                    )
-                if ok:
-                    GLib.idle_add(
-                        self._app._status, f"⏱ Slideshow: {Path(path).name}"
-                    )
-                    GLib.idle_add(self._app._set_active_wallpapers, [path])
-                    GLib.idle_add(self._app._update_preview, path)
-                else:
-                    logger.error("Slideshow apply failed: %s", path)
+        # 1. On met à jour l'état local
+        for mon in self._app.monitors:
+            self._app.settings.per_monitor[mon.connector] = path
+            
+        # 2. On SAUVEGARDE sur le disque
+        self._app.config.save(self._app.settings) 
 
-            threading.Thread(target=_apply_single_async, daemon=True).start()
-        else:
-            # Composite multi-monitor — traitement PIL lourd → thread séparé
-            threading.Thread(
-                target=self._apply_composite_async,
-                args=(path, mode, lock, list(target_monitors)),
-                daemon=True,
-            ).start()
+        # 3. ON REVEILLE LE DAEMON
+        if self._app._daemon.available:
+            self._app._daemon.reload_config()
+            self._app._daemon.set_wallpaper(path) # On lui pousse l'ordre direct
+
+        # 4. On applique visuellement
+        threading.Thread(
+            target=self._apply_composite_async,
+            args=(path, self._app.current_mode, self._app.apply_to_lockscreen, [m.connector for m in self._app.monitors]),
+            daemon=True
+        ).start()
 
         return True
 
