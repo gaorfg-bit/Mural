@@ -1,4 +1,4 @@
-<p align="left">
+<p align="center">
   <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="100" height="auto">
 </p>
 
