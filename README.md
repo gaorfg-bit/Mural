@@ -25,7 +25,6 @@ Browse your image collection, preview in full size, and set your wallpaper in on
   <a href="https://wayland.freedesktop.org"><img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
-  <a href="https://ko-fi.com/M4M51RKN7V"><img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi"></a>
 </p>
 
 ---
