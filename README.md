@@ -6,7 +6,14 @@
 
 <p align="center">
   <strong>The wallpaper manager GNOME was missing.</strong>
-</p>Mural
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome" alt="GNOME 49">
+  <img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License">
+</p>
 
 **The wallpaper manager GNOME was missing.**
 
