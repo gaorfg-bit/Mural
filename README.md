@@ -12,16 +12,8 @@
    <a href="https://ko-fi.com/M4M51RKN7V"><img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi"></a>
 </p>
 
----
-
 <p align="center">
-**The wallpaper manager GNOME was missing.**
-
-Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
-</p>
-
-<p align="center">
-  <a href="https://gnome.org"><img src="https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome" alt="GNOME 49"></a>
+  <a href="https://gnome.org"><img src="https://img.shields.io/badge/GNOME-46%2B-blue?logo=gnome" alt="GNOME 46+"></a>
   <a href="https://wayland.freedesktop.org"><img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
@@ -33,9 +25,11 @@ Browse your image collection, preview in full size, and set your wallpaper in on
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=jEkizpNf0B0">
-    <img src="https://img.youtube.com/vi/jEkizpNf0B0/maxresdefault.jpg" alt="Mural Demo" width="900">
+    <img src="https://img.youtube.com/vi/jEkizpNf0B0/maxresdefault.jpg" alt="Mural Demo Video" width="900">
   </a>
 </p>
+
+---
 
 ## What you can do with Mural
 
@@ -50,15 +44,16 @@ Turn on auto-rotation and Mural will change your wallpaper every X minutes. Rand
 
 **AVIF compression** *(optional)*
 Have a large collection? Mural can convert your images to AVIF and cut their file size in half — without ever touching the originals.
+
+---
+
+<p align="center">
+  <img src="assets/Mural.png" alt="Mural Screenshot" width="900">
 </p>
 
 ---
 
-
-  <img src="assets/Mural.png" alt="Mural Logo" width="900">
-</p>
-
-### Installation
+## Installation
 
 ### Dependencies
 
@@ -94,6 +89,18 @@ Removes everything cleanly.
 
 ---
 
+## Multi-monitor setup
+
+For a different wallpaper on each screen, run this once:
+
+```bash
+gsettings set org.gnome.desktop.background picture-options spanned
+```
+
+Mural takes care of the rest.
+
+---
+
 ## Compatibility
 
 Mural works on **GNOME 46 and above**, on both Wayland and X11, with or without multiple monitors.
@@ -102,7 +109,7 @@ Mural works on **GNOME 46 and above**, on both Wayland and X11, with or without 
 
 ## Contributing
 
-Got an idea, found a bug, or want to add KDE support or a Flatpak package? Issues and PRs are welcome.
+Got an idea, found a bug, or want to add KDE support? Issues and PRs are welcome.
 
 ---
 
