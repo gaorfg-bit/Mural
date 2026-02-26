@@ -12,6 +12,14 @@
    <a href="https://ko-fi.com/M4M51RKN7V"><img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi"></a>
 </p>
 
+---
+
+<p align="center">
+**The wallpaper manager GNOME was missing.**
+
+Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
+</p>
+
 <p align="center">
   <a href="https://gnome.org"><img src="https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome" alt="GNOME 49"></a>
   <a href="https://wayland.freedesktop.org"><img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland"></a>
@@ -19,13 +27,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
   <a href="https://ko-fi.com/M4M51RKN7V"><img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi"></a>
 </p>
-
----
-
-<p align="center">
-**The wallpaper manager GNOME was missing.**
-
-Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on 
 
 ---
 
