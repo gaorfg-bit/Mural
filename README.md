@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/Mural.png" alt="Mural Icon" width="128">
+  <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="128">
 </p>
 
 <h1 align="center">Mural</h1>
