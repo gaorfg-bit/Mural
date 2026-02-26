@@ -2,11 +2,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 from PIL import Image
-from gi.repository import GLib
+from gi.repository import Gio, GLib
 
 # Import de tes modèles (assure-toi que MonitorInfo a bien x, y, width, height, connector)
 from models import MonitorInfo
@@ -28,13 +27,17 @@ class GnomeBackend:
         Le cœur nucléaire du script : bypass l'API asynchrone pour imposer
         la volonté du logiciel à GNOME instantanément.
         """
+        import subprocess
         cmds = [
-            f"gsettings set {self.settings_schema} picture-options '{mode}'",
-            f"gsettings set {self.settings_schema} picture-uri '{uri}'",
-            f"gsettings set {self.settings_schema} picture-uri-dark '{uri}'"
+            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-options", "spanned"],
+            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri],
+            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", uri],
         ]
         for cmd in cmds:
-            subprocess.run(cmd, shell=True, check=False)
+            try:
+                subprocess.run(cmd, check=False)
+            except Exception as e:
+                logger.warning("gsettings failed: %s", e)
 
     def _generate_universal_canvas(self, assignments: Dict[str, str], monitors: List[MonitorInfo]) -> Image.Image:
         """
@@ -133,7 +136,7 @@ class GnomeBackend:
     def is_dark_mode(self) -> bool:
         try:
             # Vérifie le thème du système hôte
-            result = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"], capture_output=True, text=True)
-            return "dark" in result.stdout.lower()
+            settings = Gio.Settings.new("org.gnome.desktop.interface")
+            return "dark" in settings.get_string("color-scheme").lower()
         except:
             return True

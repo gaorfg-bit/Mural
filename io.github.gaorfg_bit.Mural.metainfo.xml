@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.gaorfg-bit.Mural</id>
+  <id>io.github.gaorfg_bit.Mural</id>
 
   <name>Mural</name>
   <summary>The wallpaper manager GNOME was missing</summary>
@@ -21,12 +21,12 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.gaorfg-bit.Mural.desktop</launchable>
+  <launchable type="desktop-id">io.github.gaorfg_bit.Mural.desktop</launchable>
 
-  <url type="homepage">https://github.com/gaorfg-bit/Mural</url>
-  <url type="bugtracker">https://github.com/gaorfg-bit/Mural/issues</url>
+  <url type="homepage">https://github.com/gaorfg_bit/Mural</url>
+  <url type="bugtracker">https://github.com/gaorfg_bit/Mural/issues</url>
 
-  <developer id="io.github.gaorfg-bit">
+  <developer id="io.github.gaorfg_bit">
     <name>GaoR</name>
   </developer>
 

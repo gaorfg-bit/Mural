@@ -2,7 +2,7 @@
 Name=Mural
 Comment=The wallpaper manager GNOME was missing
 Exec=mural
-Icon=io.github.gaorfg-bit.Mural
+Icon=io.github.gaorfg_bit.Mural
 Terminal=false
 Type=Application
 Categories=GTK;GNOME;Utility;
