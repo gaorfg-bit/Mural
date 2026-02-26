@@ -13,16 +13,11 @@
   <img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland">
   <img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License">
-</p>
-
-**The wallpaper manager GNOME was missing.**
+  
+  **The wallpaper manager GNOME was missing.**
 
 Browse your image collection, preview in full size, and set your wallpaper in one click — with a different image on each screen if you have multiple monitors.
-
-![GNOME 49](https://img.shields.io/badge/GNOME-49%2B-blue?logo=gnome)
-![Wayland](https://img.shields.io/badge/Wayland-✓-green)
-![Python](https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python)
-![License](https://img.shields.io/badge/License-GPL--3.0-red)
+</p>
 
 ---
 
