@@ -1,3 +1,4 @@
+cat > ~/Creation/Mural/README.md << 'ENDOFFILE'
 <p align="center">
   <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="64">
 </p>
@@ -57,7 +58,7 @@ Have a large collection? Mural can convert your images to AVIF and cut their fil
 
 ### Dependencies
 
-```bash
+\`\`\`bash
 # Ubuntu / Debian
 sudo apt install python3-gi python3-pil gir1.2-gtk-4.0 gir1.2-adw-1
 
@@ -66,24 +67,24 @@ sudo dnf install python3-gobject python3-pillow gtk4 libadwaita
 
 # Arch
 sudo pacman -S python-gobject python-pillow gtk4 libadwaita
-```
+\`\`\`
 
 ### Install
 
-```bash
+\`\`\`bash
 git clone https://github.com/gaorfg-bit/mural
 cd mural
 pip install -r requirements.txt
 ./install.sh
-```
+\`\`\`
 
 That's it. Mural will appear in your GNOME Activities as **Mural**. No system-wide changes — everything installs in your home folder.
 
 ### Uninstall
 
-```bash
+\`\`\`bash
 ./uninstall.sh
-```
+\`\`\`
 
 Removes everything cleanly.
 
@@ -93,9 +94,9 @@ Removes everything cleanly.
 
 For a different wallpaper on each screen, run this once:
 
-```bash
+\`\`\`bash
 gsettings set org.gnome.desktop.background picture-options spanned
-```
+\`\`\`
 
 Mural takes care of the rest.
 
