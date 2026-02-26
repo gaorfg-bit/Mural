@@ -1,4 +1,12 @@
-# 🖼️ Mural
+<p align="center">
+  <img src="assets/Mural.png" alt="Mural Icon" width="128">
+</p>
+
+<h1 align="center">Mural</h1>
+
+<p align="center">
+  <strong>The wallpaper manager GNOME was missing.</strong>
+</p>Mural
 
 **The wallpaper manager GNOME was missing.**
 
