@@ -1,4 +1,3 @@
-cat > ~/Creation/Mural/README.md << 'ENDOFFILE'
 <p align="center">
   <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="64">
 </p>
