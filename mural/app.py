@@ -862,7 +862,7 @@ class MuralWindow(Adw.ApplicationWindow):
         try:
             dialog = Adw.AboutDialog()
             dialog.set_application_name("Mural")
-            dialog.set_version("0.1.1")
+            dialog.set_version("1.0")
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
             dialog.set_application_icon("io.github.gaorfg_bit.Mural")
@@ -874,7 +874,7 @@ class MuralWindow(Adw.ApplicationWindow):
         except AttributeError:
             win = Adw.AboutWindow(transient_for=self)
             win.set_application_name("Mural")
-            win.set_version("0.1.1")
+            win.set_version("1.0")
             win.set_developer_name("GaoR")
             win.set_developers(["GaoR"])
             win.set_application_icon("io.github.gaorfg_bit.Mural")
