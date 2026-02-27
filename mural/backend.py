@@ -25,9 +25,9 @@ class GnomeBackend:
     def _force_gnome_settings(self, uri: str, mode: str):
         import subprocess
         cmds = [
-            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-options", "spanned"],
-            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri],
-            ["flatpak-spawn", "--host", "gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", uri],
+            ["gsettings", "set", "org.gnome.desktop.background", "picture-options", "spanned"],
+            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri],
+            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", uri],
         ]
         for cmd in cmds:
             try:
