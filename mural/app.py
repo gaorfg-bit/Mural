@@ -923,7 +923,7 @@ class MuralWindow(Adw.ApplicationWindow):
             dialog.set_version(APP_VERSION)
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
-            dialog.set_application_icon("io.github.gaorfg_bit.Mural")
+            dialog.set_application_icon("mural-app")
             dialog.set_website("https://github.com/gaorfg-bit/mural")
             dialog.set_issue_url("https://github.com/gaorfg-bit/mural/issues")
             dialog.set_copyright("© 2026 GaoR")
