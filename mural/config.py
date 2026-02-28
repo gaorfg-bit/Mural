@@ -37,7 +37,7 @@ class Config:
 
     @staticmethod
     def default_folder() -> Path:
-        # GLib.get_user_special_dir est Flatpak-safe, pas de subprocess
+        # GLib.get_user_special_dir is Flatpak-safe, no subprocess
         try:
             pictures = GLib.get_user_special_dir(
                 GLib.UserDirectory.DIRECTORY_PICTURES

@@ -10,7 +10,7 @@ from gi.repository import GLib
 logger = logging.getLogger("wallpaper")
 
 class SlideshowManager:
-    """Rotation automatique du fond d'écran."""
+    """Automatic wallpaper rotation."""
 
     def __init__(self, app: "WallpaperApp"):
         self._app = app
@@ -44,7 +44,7 @@ class SlideshowManager:
         if not playlist: 
             return True
 
-        # Logique de sélection
+        # Selection logic
         if self._app.settings.slideshow_random:
             import random
             path = random.choice(playlist)
@@ -53,19 +53,19 @@ class SlideshowManager:
             path = playlist[self._sequential_index]
             self._sequential_index += 1
 
-        # 1. On met à jour l'état local
+        # 1. Update local state
         for mon in self._app.monitors:
             self._app.settings.per_monitor[mon.connector] = path
             
-        # 2. On SAUVEGARDE sur le disque
+        # 2. SAVE to disk
         self._app.config.save(self._app.settings) 
 
-        # 3. ON REVEILLE LE DAEMON
+        # 3. WAKE UP THE DAEMON
         if self._app._daemon.available:
             self._app._daemon.reload_config()
-            self._app._daemon.set_wallpaper(path) # On lui pousse l'ordre direct
+            self._app._daemon.set_wallpaper(path) # Push the order directly
 
-        # 4. On applique visuellement
+        # 4. Apply visually
         threading.Thread(
             target=self._apply_composite_async,
             args=(path, self._app.current_mode, self._app.apply_to_lockscreen, [m.connector for m in self._app.monitors]),
@@ -77,13 +77,13 @@ class SlideshowManager:
     def _apply_composite_async(
         self, path: str, mode: str, lock: bool, target_monitors: list
     ) -> None:
-        """Applique le composite multi-monitor dans un thread séparé (hors thread UI)."""
+        """Applies the multi-monitor composite in a separate thread (outside UI thread)."""
         assignments = {}
         for mon in self._app.monitors:
             if mon.connector in target_monitors:
                 assignments[mon.connector] = path
             else:
-                # Conserver le fond actuel sur les autres écrans
+                # Keep current background on other screens
                 current = self._app.settings.per_monitor.get(mon.connector, path)
                 assignments[mon.connector] = current
         results = self._app.backend.apply_per_monitor(

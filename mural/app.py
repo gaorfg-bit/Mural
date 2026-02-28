@@ -44,7 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger("wallpaper")
 logger.setLevel(logging.DEBUG)
 
-# --- Configuration Multilingue ---
+# --- Multilingual Configuration ---
 APP_NAME = "mural"
 LOCALE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'locale')
 
@@ -162,7 +162,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.set_decorated(True)
         n_mon = len(self.monitors)
         
-        # 1. TITRE SUR UNE SEULE LIGNE
+        # 1. SINGLE LINE TITLE
         self._title_widget = Adw.WindowTitle(
             title=f"Mural — {n_mon} " + (_("screens") if n_mon > 1 else _("screen"))
         )
@@ -181,15 +181,15 @@ class MuralWindow(Adw.ApplicationWindow):
         hb.pack_start(self._search_toggle)
 
         if len(self.monitors) > 1:
-            btn_multimon_help = Gtk.Button(label=_("Multi-écrans ?"))
+            btn_multimon_help = Gtk.Button(label=_("Multi-monitor?"))
             btn_multimon_help.get_style_context().add_class("flat")
             btn_multimon_help.connect("clicked", self._on_multimon_help_clicked)
             hb.pack_start(btn_multimon_help)
 
-        # 2. BOUTON PLAT SUR UNE SEULE LIGNE
+        # 2. FLAT BUTTON ON SINGLE LINE
         self.btn_apply = Gtk.Button(label=_("Set as background"))
         self.btn_apply.set_sensitive(False)
-        self.btn_apply.set_valign(Gtk.Align.CENTER) # Force l'alignement vertical strict
+        self.btn_apply.set_valign(Gtk.Align.CENTER) # Force strict vertical alignment
         self.btn_apply.connect("clicked", self._on_apply)
         hb.pack_end(self.btn_apply)
 
@@ -430,7 +430,7 @@ class MuralWindow(Adw.ApplicationWindow):
             self.lbl_monitor.set_wrap(True)
             mb_box.append(self.lbl_monitor)
 
-            # SIGNAL AJOUTE ICI POUR SYNCHRONISER LA CASE
+            # SIGNAL ADDED HERE TO SYNCHRONIZE CHECKBOX
             self.chk_same_all = Gtk.CheckButton(label=_("Same image on all"))
             self.chk_same_all.set_active(True)
             self.chk_same_all.connect("toggled", self._on_same_all_toggled)
@@ -546,16 +546,16 @@ class MuralWindow(Adw.ApplicationWindow):
         b_fold.set_margin_start(12); b_fold.set_margin_end(12)
         b_fold.set_margin_top(12); b_fold.set_margin_bottom(16)
 
-        # 1. Dossier Courant (Version Ultra-Clean)
+        # 1. Current Folder (Ultra-Clean Version)
         g_cur = Adw.PreferencesGroup(title=_("Navigation"))
         self.row_current_folder = Adw.ActionRow(title=_("Current folder"), subtitle=_("Loading..."))
         self.row_current_folder.set_title_lines(1)
-        self.row_current_folder.set_subtitle_lines(3) # Permet au chemin d'être sur plusieurs lignes si besoin
+        self.row_current_folder.set_subtitle_lines(3) # Allows path to be on multiple lines if needed
 
         btn_bm = Gtk.Button()
         btn_bm.set_icon_name("bookmark-new-symbolic")
         btn_bm.set_valign(Gtk.Align.CENTER)
-        btn_bm.add_css_class("flat") # Retire le gros fond gris du bouton
+        btn_bm.add_css_class("flat") # Removes the big gray background from the button
         btn_bm.set_tooltip_text(_("Add to bookmarks"))
         btn_bm.connect("clicked", self._on_add_bookmark)
 
@@ -571,7 +571,7 @@ class MuralWindow(Adw.ApplicationWindow):
         g_cur.add(self.row_current_folder)
         b_fold.append(g_cur)
 
-        # 2. Raccourcis par écran (Version Allégée)
+        # 2. Monitor Shortcuts (Lite Version)
         if len(self.monitors) > 1:
             g_fm = Adw.PreferencesGroup(title=_("Monitor Shortcuts"))
             for i, mon in enumerate(self.monitors):
@@ -659,7 +659,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
         self._tab_stack.set_visible_child_name("display")
 
-        # --- AJOUT AUTOHIDE (HOVER) ---
+        # --- ADD AUTOHIDE (HOVER) ---
         self._sidebar_auto_opened = False
         self._is_auto_toggling = False
         motion_ctrl = Gtk.EventControllerMotion.new()
@@ -667,7 +667,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.add_controller(motion_ctrl)
 
     def _on_same_all_toggled(self, btn):
-        """Fix 1 : Si on recoche la case, on sauvegarde virtuellement la sélection pour tous"""
+        """Fix 1: If checked again, virtually save selection for all"""
         self._update_apply_btn_subtitle()
         if btn.get_active() and self.selected_image:
             for mon in self.monitors:
@@ -719,30 +719,30 @@ class MuralWindow(Adw.ApplicationWindow):
         is_active = btn.get_active()
         self._split_view.set_show_sidebar(is_active)
         
-        # Si l'utilisateur clique manuellement, on annule le mode "auto"
-        # Ça permet de "verrouiller" le panneau ouvert !
+        # If user clicks manually, cancel "auto" mode
+        # This allows "locking" the panel open!
         if not getattr(self, "_is_auto_toggling", False):
             self._sidebar_auto_opened = btn.get_active()
 
     def _on_pointer_motion(self, controller, x, y) -> None:
-        # On désactive la détection si la fenêtre est réduite en mode "mobile"
+        # Disable detection if window is reduced to "mobile" mode
         if self._split_view.get_collapsed():
             return 
 
         win_width = self.get_width()
         is_open = self._split_view.get_show_sidebar()
         
-        # 1. OUVERTURE : Si la souris frôle le bord droit (à 10px près)
+        # 1. OPEN: If mouse grazes right edge (within 10px)
         if not is_open and x >= win_width - 10:
             self._sidebar_auto_opened = True
-            self._is_auto_toggling = True # Empêche de déclencher le mode "manuel"
+            self._is_auto_toggling = True # Prevents triggering "manual" mode
             self._sidebar_toggle.set_active(True)
             self._is_auto_toggling = False
             
-        # 2. FERMETURE : Si on quitte le panneau vers la gauche
+        # 2. CLOSE: If leaving panel to the left
         elif is_open and getattr(self, "_sidebar_auto_opened", False):
             sidebar_w = self._sidebar.get_width()
-            # Marge de 20px pour éviter qu'il ne se ferme par accident
+            # 20px margin to prevent accidental closing
             if x < win_width - sidebar_w - 20:
                 self._sidebar_auto_opened = False
                 self._is_auto_toggling = True
@@ -824,13 +824,13 @@ class MuralWindow(Adw.ApplicationWindow):
         menu.append(_("Open in Files"), "win.thumb_reveal")
         menu.append(_("Copy path"), "win.thumb_copy_path")
         
-        # Section gestionnaire (comme "Retirer de la liste")
+        # Manager section (like "Remove from list")
         sec_slideshow = Gio.Menu()
         sec_slideshow.append("⭐ " + _("Add to slideshow"), "win.thumb_slideshow_add")
         sec_slideshow.append("❌ " + _("Remove from slideshow"), "win.thumb_slideshow_remove")
         menu.append_section(None, sec_slideshow)
         
-        # Section disque dur (comme "Supprimer de la liste ET du disque")
+        # Hard drive section (like "Delete from list AND disk")
         sec_danger = Gio.Menu()
         sec_danger.append("🗑️ " + _("Delete from disk"), "win.thumb_delete_disk")
         menu.append_section(None, sec_danger)
@@ -909,7 +909,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._set_selected_child(None)
 
     def _set_selected_image(self, path: str, child: Optional[Gtk.FlowBoxChild] = None) -> None:
-        """Fix 2 : On dispatche l'image selon la case 'Même image'"""
+        """Fix 2: Dispatch image according to 'Same image' checkbox"""
         self.selected_image = path
         self._selected_path = path
         self.btn_apply.set_sensitive(True)
@@ -918,7 +918,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._set_selected_child(child)
         self._preview_placeholder_label.set_visible(False)
 
-        # Logique corrigée pour respecter la case
+        # Corrected logic to respect checkbox
         if self.chk_same_all and self.chk_same_all.get_active():
             for mon in self.monitors:
                 self.settings.per_monitor[mon.connector] = path
@@ -1061,7 +1061,7 @@ class MuralWindow(Adw.ApplicationWindow):
         if not path or not Path(path).exists():
             return
             
-        # Fenêtre de confirmation de sécurité
+        # Security confirmation window
         dialog = Gtk.AlertDialog()
         dialog.set_message(_("Permanent deletion"))
         dialog.set_detail(_("Do you really want to delete this image from your hard drive?") + f"\n\n{Path(path).name}")
@@ -1074,19 +1074,19 @@ class MuralWindow(Adw.ApplicationWindow):
                 response = dlg.choose_finish(res)
             except GLib.Error:
                 return
-            if response == 1: # Si l'utilisateur clique sur "Supprimer"
+            if response == 1: # If user clicks "Delete"
                 try:
-                    Path(path).unlink() # Supprime physiquement le fichier
+                    Path(path).unlink() # Physically delete the file
                     self._status(f"🗑️ {_('File deleted')}: {Path(path).name}")
                     
-                    # Nettoyage de la base de données interne de Mural
+                    # Clean Mural internal database
                     self.settings.remove_from_slideshow(path)
                     for conn, p in list(self.settings.per_monitor.items()):
                         if p == path:
                             del self.settings.per_monitor[conn]
                     self._schedule_save()
                     
-                    # Recharge la galerie pour faire disparaître la miniature
+                    # Reload gallery to remove thumbnail
                     self._load_gallery()
                 except Exception as e:
                     self._status(f"✗ {_('Deletion error')}: {e}")
@@ -1367,7 +1367,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
 
     def _on_monitor_toggle(self, btn, index: int) -> None:
-        """Fix 3 : Restaurer visuellement l'image quand on clique sur l'onglet d'un écran"""
+        """Fix 3: Visually restore image when clicking a monitor tab"""
         if not btn.get_active():
             return
         self.current_monitor = index
@@ -1382,7 +1382,7 @@ class MuralWindow(Adw.ApplicationWindow):
         if hasattr(self, "lbl_monitor"):
             self.lbl_monitor.set_markup(self._monitor_markup(index))
 
-        # Restaure l'image assignée à cet écran spécifique
+        # Restore image assigned to this specific monitor
         conn = self.monitors[index].connector
         assigned_path = self.settings.per_monitor.get(conn)
 
@@ -1400,7 +1400,7 @@ class MuralWindow(Adw.ApplicationWindow):
                     target_child = child
                     break
 
-            # Déconnecte le signal pour ne pas redéclencher d'événements
+            # Disconnect signal to avoid re-triggering events
             self.flowbox.handler_block_by_func(self._on_flowbox_selection_changed)
             if target_child:
                 self.flowbox.select_child(target_child)
@@ -1414,7 +1414,7 @@ class MuralWindow(Adw.ApplicationWindow):
             self._clear_selection()
             self.flowbox.handler_unblock_by_func(self._on_flowbox_selection_changed)
 
-        # Charger le dossier s'il a été assigné spécialement pour cet écran
+        # Load folder if specially assigned for this monitor
         assigned_folder = self.settings.monitor_folders.get(conn)
         if assigned_folder and Path(assigned_folder).exists():
             if str(self.folder) != str(assigned_folder):
@@ -1511,7 +1511,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._set_selected_image(path, thumb)
 
     def _on_apply(self, widget):
-        """Fix 4 : Toujours forcer le Universal Canvas si on a plus d'un écran."""
+        """Fix 4: Always force Universal Canvas if more than one screen."""
         if not self.selected_image or not Path(self.selected_image).exists():
             dialog = Gtk.AlertDialog()
             dialog.set_message(_("No image selected"))
@@ -1546,7 +1546,7 @@ class MuralWindow(Adw.ApplicationWindow):
             active_paths = []
             status_msg = ""
 
-            # NOUVELLE LOGIQUE: On passe par le backend multi-écrans quoi qu'il arrive (même pour "Même image")
+            # NEW LOGIC: Go through multi-monitor backend no matter what (even for "Same image")
             if len(monitors_snapshot) > 1:
                 assignments = {}
                 if same_all:
@@ -1566,7 +1566,7 @@ class MuralWindow(Adw.ApplicationWindow):
                     if ok else f"⚠ {_('Partial canvas:')} {ok_count}/{total} {_('monitors')}"
                 )
             else:
-                # Si l'utilisateur n'a physiquement qu'un seul écran
+                # If user physically has only one screen
                 if getattr(self, "_daemon", None) and self._daemon.available:
                     ok = self._daemon.set_wallpaper(image)
                     if not ok:
@@ -1657,18 +1657,18 @@ class MuralWindow(Adw.ApplicationWindow):
             if stop_event.is_set() or generation != self.gallery_generation:
                 return
             
-            # 1. Cache RAM : Si déjà chargé, on utilise la texture directement
+            # 1. RAM Cache: If already loaded, use texture directly
             if str(fpath) in self._texture_cache:
                 batch.append((fpath, self._texture_cache[str(fpath)]))
             else:
-                # 2. Priorité AVIF pour la source
+                # 2. AVIF priority for source
                 avif = get_cached_avif(str(fpath))
                 src = str(avif) if avif else str(fpath)
                 
-                # Génération sur disque (si nécessaire)
+                # Disk generation (if necessary)
                 thumb_path = Thumbnailer.generate(src, Config.THUMB_W, Config.THUMB_H, Config.THUMB_DIR)
                 
-                # 3. Chargement Asynchrone : On lit le Pixbuf ici (Thread) pour ne pas bloquer l'UI
+                # 3. Async Loading: Read Pixbuf here (Thread) to avoid blocking UI
                 load_path = str(thumb_path) if (thumb_path and thumb_path.exists()) else src
                 try:
                     pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
@@ -1735,7 +1735,7 @@ class MuralWindow(Adw.ApplicationWindow):
                 texture = image_obj
             elif isinstance(image_obj, GdkPixbuf.Pixbuf):
                 texture = Gdk.Texture.new_for_pixbuf(image_obj)
-                # Mise en cache RAM pour la prochaine fois
+                # RAM caching for next time
                 self._texture_cache[str(fpath)] = texture
             
             if texture:
@@ -1867,24 +1867,24 @@ class MuralApplication(Adw.Application):
         super().__init__(application_id="io.github.gaorfg_bit.Mural", **kwargs)
 
     def do_activate(self):
-        """Cette méthode est appelée au lancement de 'mural'"""
+        """This method is called when launching 'mural'"""
         try:
-            print("DEBUG: Entrée dans do_activate")
+            print("DEBUG: Entering do_activate")
             
-            # On cherche si une fenêtre existe déjà
+            # Check if a window already exists
             win = self.get_active_window()
             
             if not win:
-                print("DEBUG: Création d'une nouvelle fenêtre MuralWindow")
-                # Assure-toi que ta classe de fenêtre s'appelle bien MuralWindow
+                print("DEBUG: Creating new MuralWindow")
+                # Ensure window class is named MuralWindow
                 win = MuralWindow(application=self)
             
-            print("DEBUG: Affichage de la fenêtre (present)")
-            win.present() # C'est CETTE ligne qui empêche le programme de quitter direct
+            print("DEBUG: Showing window (present)")
+            win.present() # This is THE line that prevents program from quitting immediately
         except Exception as e:
-            # C'est ça qui va nous donner la vraie raison du crash
+            # This will give us the real reason for the crash
             print("\n" + "!"*50)
-            print("💥 CRASH FATAL DANS L'INTERFACE :")
+            print("💥 FATAL CRASH IN INTERFACE:")
             traceback.print_exc()
             print("!"*50 + "\n")
             self.quit()

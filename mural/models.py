@@ -36,7 +36,7 @@ class WallpaperSettings:
     slideshow_monitors: List[str] = field(default_factory=list)
     folder_bookmarks: List[str] = field(default_factory=list)
     monitor_folders: Dict[str, str] = field(default_factory=dict)
-    avif_use_for_gnome: bool = False  # Servir l'AVIF à GNOME si disponible
+    avif_use_for_gnome: bool = False  # Serve AVIF to GNOME if available
     spanned_banner_dismissed: bool = False
 
     def to_dict(self):
@@ -48,8 +48,8 @@ class WallpaperSettings:
 
     def resolve_slideshow_playlist(self) -> List[str]:
         """
-        Retourne la liste finale des images pour le slideshow.
-        Mode 100% Manuel : Seules les images ajoutées une à une sont lues.
+        Returns the final list of images for the slideshow.
+        100% Manual Mode: Only images added one by one are played.
         """
         result: set[str] = set()
         for img in self.slideshow_images:
@@ -58,15 +58,15 @@ class WallpaperSettings:
         return sorted(result)
 
     def is_in_slideshow(self, path: str) -> bool:
-        """Retourne True uniquement si l'image a été ajoutée manuellement."""
+        """Returns True only if the image was added manually."""
         return path in self.slideshow_images
 
     def add_to_slideshow(self, path: str) -> None:
-        """Ajoute une image à la liste de lecture."""
+        """Adds an image to the playlist."""
         if path not in self.slideshow_images:
             self.slideshow_images.append(path)
 
     def remove_from_slideshow(self, path: str) -> None:
-        """Retire une image de la liste de lecture."""
+        """Removes an image from the playlist."""
         if path in self.slideshow_images:
             self.slideshow_images.remove(path)

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 """
-avif_cache.py — Cache AVIF à la demande pour Mural
+avif_cache.py — On-demand AVIF cache for Mural
 
-Utilise ImageMagick (convert/magick) pour la conversion AVIF.
-Aucune dépendance Python supplémentaire — ImageMagick est disponible
-sur toutes les distributions Linux via le gestionnaire de paquets.
+Uses ImageMagick (convert/magick) for AVIF conversion.
+No extra Python dependencies — ImageMagick is available
+on all Linux distros via package manager.
   Debian/Ubuntu : sudo apt install imagemagick
   Fedora        : sudo dnf install ImageMagick
   Arch          : sudo pacman -S imagemagick
 
-Architecture :
-- Stockage  : .mural_cache/ caché dans chaque dossier d'images
-- Conversion : à la demande explicite uniquement (bouton dans l'UI)
-- Fond GNOME : choix utilisateur via toggle dans les settings
-- Les originaux ne sont JAMAIS modifiés ni supprimés.
+Architecture:
+- Storage: .mural_cache/ hidden in each image folder
+- Conversion: explicit on-demand only (button in UI)
+- GNOME background: user choice via toggle in settings
+- Originals are NEVER modified or deleted.
 """
 
 import logging
@@ -35,13 +35,13 @@ CACHE_DIRNAME = ".mural_cache"
 
 
 def _find_imagemagick() -> Optional[str]:
-    """Retourne le chemin de la commande ImageMagick disponible."""
+    """Returns the path of the available ImageMagick command."""
     # ImageMagick 7 : commande 'magick'
     # ImageMagick 6 : commande 'convert'
     for cmd in ("magick", "convert"):
         path = shutil.which(cmd)
         if path:
-            # Vérifier que c'est bien ImageMagick et pas un autre 'convert'
+            # Check that it is indeed ImageMagick and not another 'convert'
             try:
                 out = subprocess.run(
                     [path, "--version"],
@@ -55,12 +55,12 @@ def _find_imagemagick() -> Optional[str]:
 
 
 def avif_supported() -> bool:
-    """Vérifie qu'ImageMagick est disponible et supporte AVIF."""
+    """Checks if ImageMagick is available and supports AVIF."""
     cmd = _find_imagemagick()
     if not cmd:
         return False
     try:
-        # Vérifier que le format AVIF est listé dans les formats supportés
+        # Check that the AVIF format is listed in supported formats
         out = subprocess.run(
             [cmd, "-list", "format"],
             capture_output=True, text=True, timeout=10
@@ -70,7 +70,7 @@ def avif_supported() -> bool:
         return False
 
 
-# Évalué une fois au chargement du module
+# Evaluated once at module load
 AVIF_SUPPORTED = avif_supported()
 _IMAGEMAGICK_CMD = _find_imagemagick() if AVIF_SUPPORTED else None
 
@@ -90,8 +90,8 @@ def avif_path_for(original: Path) -> Path:
 
 def get_cached_avif(original: str) -> Optional[Path]:
     """
-    Retourne le chemin AVIF s'il existe et est plus récent que l'original.
-    Ne lance AUCUNE conversion implicite.
+    Returns the AVIF path if it exists and is newer than the original.
+    Does NOT trigger implicit conversion.
     """
     orig = Path(original)
     avif = avif_path_for(orig)
@@ -100,7 +100,7 @@ def get_cached_avif(original: str) -> Optional[Path]:
     try:
         if avif.stat().st_mtime >= orig.stat().st_mtime:
             return avif
-        avif.unlink(missing_ok=True)  # original plus récent → invalide
+        avif.unlink(missing_ok=True)  # original newer → invalid
     except Exception:
         pass
     return None
@@ -108,8 +108,8 @@ def get_cached_avif(original: str) -> Optional[Path]:
 
 class FolderConverter:
     """
-    Convertit toutes les images d'un dossier en AVIF dans .mural_cache/
-    via ImageMagick. Conversion à la demande uniquement.
+    Converts all images in a folder to AVIF in .mural_cache/
+    via ImageMagick. On-demand conversion only.
     """
 
     def __init__(self):
@@ -129,21 +129,21 @@ class FolderConverter:
         on_done: Optional[Callable[[int, int], None]] = None,
     ) -> None:
         """
-        Lance la conversion de tout un dossier en arrière-plan.
+        Starts conversion of a whole folder in the background.
 
-        Callbacks (appelés sur le thread GLib) :
+        Callbacks (called on GLib thread):
           on_progress(converted, total, current_filename)
           on_done(converted, total)
         """
         if not AVIF_SUPPORTED:
-            logger.warning("ImageMagick non disponible — conversion impossible")
+            logger.warning("ImageMagick not available — conversion impossible")
             if on_done:
                 GLib.idle_add(on_done, 0, 0)
             return
 
         with self._lock:
             if self._active_folder is not None:
-                logger.warning("Conversion déjà en cours: %s", self._active_folder)
+                logger.warning("Conversion already in progress: %s", self._active_folder)
                 return
             self._active_folder = str(folder)
             self._cancel_event.clear()
@@ -208,13 +208,13 @@ class FolderConverter:
                 GLib.idle_add(on_done, converted, total)
 
     def _convert_one(self, original: Path) -> bool:
-        """Convertit un fichier via ImageMagick. Tourne dans le ThreadPoolExecutor."""
+        """Converts a file via ImageMagick. Runs in ThreadPoolExecutor."""
         if not _IMAGEMAGICK_CMD:
             return False
 
         dest = avif_path_for(original)
 
-        # Déjà à jour ?
+        # Already up to date?
         if dest.exists():
             try:
                 if dest.stat().st_mtime >= original.stat().st_mtime:
@@ -228,7 +228,7 @@ class FolderConverter:
                     _IMAGEMAGICK_CMD,
                     str(original),
                     "-quality", str(AVIF_QUALITY),
-                    "-define", "heic:speed=6",  # encode rapide
+                    "-define", "heic:speed=6",  # fast encode
                     str(dest),
                 ],
                 capture_output=True,
@@ -259,7 +259,7 @@ class FolderConverter:
             return False
 
     def folder_stats(self, folder: Path, valid_extensions: set[str]) -> dict:
-        """Stats sur le cache AVIF d'un dossier."""
+        """Stats on the AVIF cache of a folder."""
         files = []
         if folder.exists():
             try:
@@ -300,7 +300,7 @@ class FolderConverter:
         }
 
     def purge_folder(self, folder: Path) -> int:
-        """Supprime tous les AVIF de .mural_cache/ pour un dossier."""
+        """Deletes all AVIFs from .mural_cache/ for a folder."""
         cache_dir = cache_dir_for(folder)
         removed = 0
         if cache_dir.exists():

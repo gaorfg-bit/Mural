@@ -13,10 +13,10 @@ from models import MonitorInfo
 logger = logging.getLogger("wallpaper")
 
 class GnomeBackend:
-    # Les modes que ton interface Mural proposera
+    # The modes that your Mural interface will offer
     MODES = [
-        ("spanned", "Multi-Écrans Indépendants (Recommandé)"),
-        ("zoom", "Même image partout (Zoom)")
+        ("spanned", "Independent Multi-Monitor (Recommended)"),
+        ("zoom", "Same image everywhere (Zoom)")
     ]
 
     def __init__(self):
@@ -131,7 +131,7 @@ class GnomeBackend:
 
     def is_dark_mode(self) -> bool:
         try:
-            # Vérifie le thème du système hôte
+            # Check host system theme
             settings = Gio.Settings.new("org.gnome.desktop.interface")
             return "dark" in settings.get_string("color-scheme").lower()
         except:

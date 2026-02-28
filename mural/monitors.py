@@ -13,12 +13,12 @@ logger = logging.getLogger("wallpaper")
 class MonitorDetector:
     @staticmethod
     def detect() -> List[MonitorInfo]:
-        """Détecte les moniteurs en pixels LOGIQUES GDK.
+        """Detects monitors in GDK LOGICAL pixels.
 
-        Le portal org.freedesktop.portal.Wallpaper attend une image en pixels
-        logiques — GNOME applique lui-même le scaling physique. Utiliser des
-        pixels physiques (via Mutter D-Bus) génère un composite surdimensionné
-        qui apparaît comme 6144×2560 au lieu de 3840×1600 (scale 1.6×).
+        The org.freedesktop.portal.Wallpaper portal expects an image in logical
+        pixels — GNOME applies physical scaling itself. Using physical pixels
+        (via Mutter D-Bus) generates an oversized composite that appears as
+        6144×2560 instead of 3840×1600 (scale 1.6×).
         """
         monitors = []
         try:
@@ -29,7 +29,7 @@ class MonitorDetector:
             monitors_list = display.get_monitors()
             for i in range(monitors_list.get_n_items()):
                 mon = monitors_list.get_item(i)
-                geo = mon.get_geometry()  # pixels logiques — correct pour le portal
+                geo = mon.get_geometry()  # logical pixels — correct for the portal
 
                 connector = ""
                 try:
@@ -37,7 +37,7 @@ class MonitorDetector:
                 except AttributeError:
                     pass
 
-                name = mon.get_model() or f"Écran {i + 1}"
+                name = mon.get_model() or f"Monitor {i + 1}"
                 if connector:
                     name = f"{name} ({connector})"
 
@@ -61,7 +61,7 @@ class MonitorDetector:
 
         if not monitors:
             monitors.append(MonitorInfo(
-                name="Écran principal",
+                name="Primary Monitor",
                 connector="default",
                 width=1920, height=1080,
                 x=0, y=0,

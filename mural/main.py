@@ -1,11 +1,11 @@
 import sys
 import os
 
-# Force le chemin pour trouver le package 'mural'
+# Force path to find 'mural' package
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
-    # Le nom de la classe DOIT être MuralApplication
+    # The class name MUST be MuralApplication
     from mural.app import MuralApplication
 except ImportError:
     from app import MuralApplication

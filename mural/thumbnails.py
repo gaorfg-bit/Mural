@@ -15,10 +15,10 @@ class Thumbnailer:
     @staticmethod
     def generate(path: str, tw: int, th: int, cache: Path) -> Optional[Path]:
         """
-        Genere un thumbnail JPEG dans le cache.
-        - JPEG draft mode : Pillow decode a 1/8 resolution native (8x plus rapide)
-        - BILINEAR au lieu de LANCZOS : imperceptible a 120px, 3x plus rapide
-        - with block : libere la memoire image immediatement apres save
+        Generates a JPEG thumbnail in the cache.
+        - JPEG draft mode: Pillow decodes at 1/8 native resolution (8x faster)
+        - BILINEAR instead of LANCZOS: imperceptible at 120px, 3x faster
+        - with block: releases image memory immediately after save
         """
         try:
             p = Path(path)
@@ -29,7 +29,7 @@ class Thumbnailer:
                 return cached
 
             with Image.open(path) as img:
-                # Draft mode : demande a Pillow le decode minimal pour la taille cible
+                # Draft mode: ask Pillow for minimal decode for target size
                 if hasattr(img, "draft"):
                     img.draft("RGB", (tw * 2, th * 2))
 
@@ -43,13 +43,13 @@ class Thumbnailer:
                 ratio = max(tw / img.width, th / img.height)
                 new_w = int(img.width * ratio)
                 new_h = int(img.height * ratio)
-                # BILINEAR : 3x plus rapide, invisible a cette taille
+                # BILINEAR: 3x faster, invisible at this size
                 thumb = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
                 left = (new_w - tw) // 2
                 top  = (new_h - th) // 2
                 thumb = thumb.crop((left, top, left + tw, top + th))
                 thumb.save(str(cached), "JPEG", quality=82, optimize=False)
-                # with block libere img et thumb ici
+                # with block releases img and thumb here
             return cached
 
         except Exception as e:
@@ -58,7 +58,7 @@ class Thumbnailer:
 
 
 class ImageLoader:
-    """Centralise les acces Pillow. Ne jamais appeler depuis le thread UI."""
+    """Centralizes Pillow access. Never call from UI thread."""
 
     @staticmethod
     def get_dimensions(path: str) -> Optional[Tuple[int, int]]:
@@ -74,14 +74,14 @@ class ImageLoader:
         path: str, max_w: int, max_h: int
     ) -> Optional[Tuple[bytes, int, int, bool]]:
         """
-        Charge et redimensionne pour la preview.
-        Retourne (raw_pixels, w, h, has_alpha).
-        Les pixels bruts permettent Gdk.MemoryTexture sans aucun decodage
-        supplementaire dans le thread UI — zero blocage GTK.
+        Loads and resizes for preview.
+        Returns (raw_pixels, w, h, has_alpha).
+        Raw pixels allow Gdk.MemoryTexture without any extra decoding
+        in UI thread — zero GTK blocking.
         """
         try:
             with Image.open(path) as img:
-                # Draft mode : ne decode que le minimum necessaire
+                # Draft mode: decode only minimum necessary
                 if hasattr(img, "draft"):
                     img.draft("RGB", (max_w, max_h))
 
@@ -98,7 +98,7 @@ class ImageLoader:
                     img = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
                 w, h = img.size
-                raw = img.tobytes()   # pixels bruts, pas de PNG encode
+                raw = img.tobytes()   # raw pixels, no PNG encoding
             return (raw, w, h, has_alpha)
 
         except Exception as e:

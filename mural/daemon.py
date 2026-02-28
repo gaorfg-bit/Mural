@@ -8,7 +8,7 @@ from gi.repository import Gio, GLib
 logger = logging.getLogger("wallpaper")
 
 class MuralDaemonProxy:
-    """Proxy D-Bus vers le daemon mural. Utilisé par l'app si le daemon tourne."""
+    """D-Bus proxy to the mural daemon. Used by the app if the daemon is running."""
 
     DBUS_NAME = "io.github.mural"
     DBUS_PATH = "/io/github/mural"
@@ -31,7 +31,7 @@ class MuralDaemonProxy:
                 self.DBUS_IFACE,
                 None,
             )
-            # Vérifier que le service répond vraiment
+            # Check that the service really responds
             self._proxy.call_sync(
                 "GetCurrentWallpaper",
                 None,
@@ -40,10 +40,10 @@ class MuralDaemonProxy:
                 None,
             )
             self._available = True
-            logger.info("Daemon D-Bus disponible")
+            logger.info("D-Bus Daemon available")
             return True
         except Exception as e:
-            logger.info("Daemon non disponible (fallback local): %s", e)
+            logger.info("Daemon not available (local fallback): %s", e)
             self._available = False
             return False
 
