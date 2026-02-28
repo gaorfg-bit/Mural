@@ -104,11 +104,11 @@ Mural takes care of the rest.
 ## Changelog
 
 ### v1.1
-- 🖥️ **Independent monitors by default** — "Same image on all" is now unchecked by default. Each monitor manages its wallpaper independently, and the preference is saved between sessions.
-- 🔒 **No more overwriting** — Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers.
-- 🔗 **Dock icon fixed** — Mural now shows its proper icon in the taskbar instead of the generic terminal script icon.
-- 🆕 **What's new dialog** — A popup shows what changed on first launch after an update. Accessible anytime from the app menu.
-- 🧹 **Cleaner uninstall** — `uninstall.sh` now properly removes the icon and desktop entry so Mural disappears from the app list immediately.
+- **Independent monitors by default** — "Same image on all" is now unchecked by default. Each monitor manages its wallpaper independently, and the preference is saved between sessions.
+- **No more overwriting** — Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers.
+- **Dock icon fixed** — Mural now shows its proper icon in the taskbar instead of the generic terminal script icon.
+- **What's new dialog** — A popup shows what changed on first launch after an update. Accessible anytime from the app menu.
+- **Cleaner uninstall** — `uninstall.sh` now properly removes the icon and desktop entry so Mural disappears from the app list immediately.
 
 ---
 
