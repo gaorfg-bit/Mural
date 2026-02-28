@@ -68,6 +68,16 @@ sys.excepthook = _log_uncaught_exception
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = 268_435_456
 
+APP_VERSION = "1.1"
+
+WHATS_NEW = {
+    "1.1": [
+        ("🖥️", "Independent monitors", "The \"Same image on all\" option is now unchecked by default. Each monitor keeps its own wallpaper independently."),
+        ("🔒", "No more overwriting", "Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers."),
+        ("🔗", "Dock icon fixed", "Mural now shows its proper icon in the taskbar instead of the generic terminal script icon."),
+    ]
+}
+
 SLIDESHOW_CSS = """
 .slideshow-indicator {
     color: gold;
@@ -150,6 +160,9 @@ class MuralWindow(Adw.ApplicationWindow):
         GLib.timeout_add(200, self._refresh_flowbox_columns)
 
         self._init_shortcuts()
+        # Show "What's new" popup if version changed
+        if self.settings.last_seen_version != APP_VERSION:
+            GLib.timeout_add(800, self._show_whats_new)
         if self._daemon.available:
             logger.info("Slideshow delegated to daemon")
             # self._sync_ui_from_daemon()
@@ -180,12 +193,6 @@ class MuralWindow(Adw.ApplicationWindow):
         hb.pack_start(btn_folder)
         hb.pack_start(self._search_toggle)
 
-        if len(self.monitors) > 1:
-            btn_multimon_help = Gtk.Button(label=_("Multi-monitor?"))
-            btn_multimon_help.get_style_context().add_class("flat")
-            btn_multimon_help.connect("clicked", self._on_multimon_help_clicked)
-            hb.pack_start(btn_multimon_help)
-
         # 2. FLAT BUTTON ON SINGLE LINE
         self.btn_apply = Gtk.Button(label=_("Set as background"))
         self.btn_apply.set_sensitive(False)
@@ -197,6 +204,7 @@ class MuralWindow(Adw.ApplicationWindow):
         app_menu.append(_("Refresh gallery"), "win.refresh")
         app_menu.append(_("Clear cache"), "win.clear_cache")
         _sep = Gio.Menu()
+        _sep.append("🆕 What's new", "win.whats_new")
         _sep.append(_("About Mural"), "win.about")
         app_menu.append_section(None, _sep)
         menu_btn = Gtk.MenuButton()
@@ -432,7 +440,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
             # SIGNAL ADDED HERE TO SYNCHRONIZE CHECKBOX
             self.chk_same_all = Gtk.CheckButton(label=_("Same image on all"))
-            self.chk_same_all.set_active(True)
+            self.chk_same_all.set_active(self.settings.same_image_on_all)
             self.chk_same_all.connect("toggled", self._on_same_all_toggled)
             mb_box.append(self.chk_same_all)
 
@@ -667,9 +675,11 @@ class MuralWindow(Adw.ApplicationWindow):
         self.add_controller(motion_ctrl)
 
     def _on_same_all_toggled(self, btn):
-        """Fix 1: If checked again, virtually save selection for all"""
+        active = btn.get_active()
+        self.settings.same_image_on_all = active
+        self._schedule_save()
         self._update_apply_btn_subtitle()
-        if btn.get_active() and self.selected_image:
+        if active and self.selected_image:
             for mon in self.monitors:
                 self.settings.per_monitor[mon.connector] = self.selected_image
 
@@ -794,6 +804,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._register_action("refresh", lambda *_: self._load_gallery(), "<Primary>R")
         self._register_action("clear_cache", self._on_clear_cache, None)
         self._register_action("about", self._on_about, None)
+        self._register_action("whats_new", self._show_whats_new, None)
 
         action_search = Gio.SimpleAction.new("toggle_search", None)
         action_search.connect(
@@ -858,11 +869,58 @@ class MuralWindow(Adw.ApplicationWindow):
             toast.set_timeout(3)
             self._toast_overlay.add_toast(toast)
 
-    def _on_about(self, *_) -> None:
+    def _show_whats_new(self, *args) -> None:
+        tr = gettext.gettext
+        changes = WHATS_NEW.get(APP_VERSION, [])
+        if not changes:
+            return
+
+        dialog = Adw.MessageDialog(transient_for=self, heading=f"What's new in Mural {APP_VERSION}")
+        dialog.add_response("close", "Close")
+        dialog.set_default_response("close")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(4)
+        box.set_margin_bottom(4)
+        box.set_margin_start(4)
+        box.set_margin_end(4)
+
+        for icon, title, desc in changes:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            row.set_valign(Gtk.Align.START)
+
+            emoji_lbl = Gtk.Label(label=icon)
+            emoji_lbl.set_valign(Gtk.Align.START)
+            emoji_lbl.set_margin_top(2)
+            row.append(emoji_lbl)
+
+            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            title_lbl = Gtk.Label()
+            title_lbl.set_markup(f"<b>{title}</b>")
+            title_lbl.set_xalign(0)
+            desc_lbl = Gtk.Label(label=desc)
+            desc_lbl.set_xalign(0)
+            desc_lbl.set_wrap(True)
+            desc_lbl.set_max_width_chars(40)
+            desc_lbl.add_css_class("dim-label")
+            text_box.append(title_lbl)
+            text_box.append(desc_lbl)
+            row.append(text_box)
+            box.append(row)
+
+        dialog.set_extra_child(box)
+        dialog.connect("response", lambda d, r: None)
+        dialog.present()
+
+        # Mark as seen
+        self.settings.last_seen_version = APP_VERSION
+        self._schedule_save()
+
+    def _on_about(self, *args) -> None:
         try:
             dialog = Adw.AboutDialog()
             dialog.set_application_name("Mural")
-            dialog.set_version("1.0")
+            dialog.set_version(APP_VERSION)
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
             dialog.set_application_icon("io.github.gaorfg_bit.Mural")
@@ -874,7 +932,7 @@ class MuralWindow(Adw.ApplicationWindow):
         except AttributeError:
             win = Adw.AboutWindow(transient_for=self)
             win.set_application_name("Mural")
-            win.set_version("1.0")
+            win.set_version(APP_VERSION)
             win.set_developer_name("GaoR")
             win.set_developers(["GaoR"])
             win.set_application_icon("io.github.gaorfg_bit.Mural")
@@ -1344,12 +1402,6 @@ class MuralWindow(Adw.ApplicationWindow):
         if hasattr(self, "row_current_folder"):
             self.row_current_folder.set_subtitle(f"{self.folder}\n{total} " + (_("images") if total > 1 else _("image")))
 
-    def _on_multimon_help_clicked(self, widget):
-        try:
-            Gio.AppInfo.launch_default_for_uri("https://github.com/gaorfg-bit/Mural#multi-écrans", None)
-        except Exception as e:
-            logger.warning("Failed to open help URL: %s", e)
-
     def _init_state(self):
         self.row_current_folder.set_subtitle(str(self.folder))
         current = self.backend.get_current() if self.backend else None
@@ -1552,7 +1604,20 @@ class MuralWindow(Adw.ApplicationWindow):
                 if same_all:
                     assignments = {mon.connector: image for mon in monitors_snapshot}
                 else:
-                    assignments = {mon.connector: per_monitor_snapshot.get(mon.connector, image) for mon in monitors_snapshot}
+                    # Bug fix: don't overwrite monitors that already have an assigned wallpaper
+                    # Only update the currently selected monitor
+                    conn = monitors_snapshot[self.current_monitor].connector
+                    assignments = {}
+                    for mon in monitors_snapshot:
+                        if mon.connector == conn:
+                            assignments[mon.connector] = image
+                        else:
+                            # Keep existing assignment, do NOT fall back to current image
+                            existing = per_monitor_snapshot.get(mon.connector, "")
+                            if existing and Path(existing).exists():
+                                assignments[mon.connector] = existing
+                            else:
+                                assignments[mon.connector] = image
 
                 results = self.backend.apply_per_monitor(
                     assignments, "spanned", lock, monitors=monitors_snapshot

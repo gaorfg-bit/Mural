@@ -38,6 +38,8 @@ class WallpaperSettings:
     monitor_folders: Dict[str, str] = field(default_factory=dict)
     avif_use_for_gnome: bool = False  # Serve AVIF to GNOME if available
     spanned_banner_dismissed: bool = False
+    same_image_on_all: bool = False  # Default: independent per monitor
+    last_seen_version: str = ""  # Last version for which "What's new" was shown
 
     def to_dict(self):
         return asdict(self)

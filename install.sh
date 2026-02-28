@@ -27,7 +27,6 @@ EOF
 chmod +x "$BIN_DIR/$APP"
 
 echo "Creating desktop file (simple ID)..."
-# Simplified ID to force GNOME to refresh
 cat <<EOF > "$APP_DIR/mural.desktop"
 [Desktop Entry]
 Name=Mural
@@ -38,6 +37,7 @@ Type=Application
 Terminal=false
 Categories=Utility;Settings;
 StartupNotify=true
+StartupWMClass=io.github.gaorfg_bit.Mural
 Keywords=wallpaper;background;
 EOF
 
