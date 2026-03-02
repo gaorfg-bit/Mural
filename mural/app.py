@@ -68,9 +68,16 @@ sys.excepthook = _log_uncaught_exception
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = 268_435_456
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.1.1"
 
 WHATS_NEW = {
+    "1.1.1": [
+        ("🖼️", "Better thumbnails", "Thumbnails are now sharper and larger. Clear cache once to regenerate them."),
+        ("⌨️", "Keyboard shortcuts", "Press Enter to apply the selected wallpaper. Press Space for a fullscreen preview."),
+        ("🖱️", "Sort from right-click", "Right-click any thumbnail to sort the gallery by name or by date."),
+        ("📌", "Pinnable sidebar", "Click the sidebar button to pin it open permanently. Hover still works when unpinned."),
+        ("🧹", "Memory improvements", "Texture cache is now cleared when switching folders, reducing RAM usage."),
+    ],
     "1.1": [
         ("🖥️", "Independent monitors", "The \"Same image on all\" option is now unchecked by default. Each monitor keeps its own wallpaper independently."),
         ("🔒", "No more overwriting", "Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers."),
@@ -130,6 +137,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._child_to_path: Dict[Gtk.FlowBoxChild, str] = {}
         self._selected_child: Optional[Gtk.FlowBoxChild] = None
         self._search_text: str = ""
+        self._sort_mode: str = "name"  # "name" or "date"
         self._context_path: Optional[str] = None
         self._preview_timeout_id: Optional[int] = None
         self._bookmark_action_names: list[str] = []
@@ -142,6 +150,7 @@ class MuralWindow(Adw.ApplicationWindow):
             else Config.default_folder()
         )
         self._slideshow_css_added = False
+        self._sidebar_pinned = False
         _display = Gdk.Display.get_default()
         if _display:
             _display.get_monitors().connect("items-changed", self._on_monitors_changed)
@@ -338,6 +347,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.status_label.set_hexpand(True)
         self.status_label.add_css_class("dim-label")
         statusbar.append(self.status_label)
+
         self._sb_sep1 = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
         self._sb_sep1.set_margin_top(4)
         self._sb_sep1.set_margin_bottom(4)
@@ -667,9 +677,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
         self._tab_stack.set_visible_child_name("display")
 
-        # --- ADD AUTOHIDE (HOVER) ---
-        self._sidebar_auto_opened = False
-        self._is_auto_toggling = False
+        # --- HOVER + PIN ---
         motion_ctrl = Gtk.EventControllerMotion.new()
         motion_ctrl.connect("motion", self._on_pointer_motion)
         self.add_controller(motion_ctrl)
@@ -726,38 +734,31 @@ class MuralWindow(Adw.ApplicationWindow):
             self._tab_stack.set_visible_child_name(tab_id)
 
     def _on_sidebar_toggle(self, btn):
-        is_active = btn.get_active()
-        self._split_view.set_show_sidebar(is_active)
-        
-        # If user clicks manually, cancel "auto" mode
-        # This allows "locking" the panel open!
-        if not getattr(self, "_is_auto_toggling", False):
-            self._sidebar_auto_opened = btn.get_active()
+        """Pin button: locks sidebar open permanently. Hover still works when unpinned."""
+        self._sidebar_pinned = btn.get_active()
+        self._split_view.set_show_sidebar(self._sidebar_pinned)
+        # Update icon to reflect pinned state
+        btn.set_icon_name("view-pin-symbolic" if self._sidebar_pinned else "sidebar-show-right-symbolic")
 
     def _on_pointer_motion(self, controller, x, y) -> None:
-        # Disable detection if window is reduced to "mobile" mode
+        # If sidebar is pinned by user, hover does nothing
+        if getattr(self, "_sidebar_pinned", False):
+            return
         if self._split_view.get_collapsed():
-            return 
+            return
 
         win_width = self.get_width()
         is_open = self._split_view.get_show_sidebar()
-        
-        # 1. OPEN: If mouse grazes right edge (within 10px)
+
+        # Open on hover near right edge
         if not is_open and x >= win_width - 10:
-            self._sidebar_auto_opened = True
-            self._is_auto_toggling = True # Prevents triggering "manual" mode
-            self._sidebar_toggle.set_active(True)
-            self._is_auto_toggling = False
-            
-        # 2. CLOSE: If leaving panel to the left
-        elif is_open and getattr(self, "_sidebar_auto_opened", False):
+            self._split_view.set_show_sidebar(True)
+
+        # Close when mouse leaves sidebar area
+        elif is_open:
             sidebar_w = self._sidebar.get_width()
-            # 20px margin to prevent accidental closing
             if x < win_width - sidebar_w - 20:
-                self._sidebar_auto_opened = False
-                self._is_auto_toggling = True
-                self._sidebar_toggle.set_active(False)
-                self._is_auto_toggling = False
+                self._split_view.set_show_sidebar(False)
 
     def _ensure_slideshow_css(self) -> None:
         if self._slideshow_css_added:
@@ -805,6 +806,8 @@ class MuralWindow(Adw.ApplicationWindow):
         self._register_action("clear_cache", self._on_clear_cache, None)
         self._register_action("about", self._on_about, None)
         self._register_action("whats_new", self._show_whats_new, None)
+        self._register_action("sort_by_name", lambda *_: self._set_sort("name"), None)
+        self._register_action("sort_by_date", lambda *_: self._set_sort("date"), None)
 
         action_search = Gio.SimpleAction.new("toggle_search", None)
         action_search.connect(
@@ -834,7 +837,13 @@ class MuralWindow(Adw.ApplicationWindow):
         menu.append(_("Set as background"), "win.thumb_set")
         menu.append(_("Open in Files"), "win.thumb_reveal")
         menu.append(_("Copy path"), "win.thumb_copy_path")
-        
+
+        # Sort section
+        sec_sort = Gio.Menu()
+        sec_sort.append("↑ " + _("Sort by name"), "win.sort_by_name")
+        sec_sort.append("🕐 " + _("Sort by date"), "win.sort_by_date")
+        menu.append_section(None, sec_sort)
+
         # Manager section (like "Remove from list")
         sec_slideshow = Gio.Menu()
         sec_slideshow.append("⭐ " + _("Add to slideshow"), "win.thumb_slideshow_add")
@@ -870,45 +879,64 @@ class MuralWindow(Adw.ApplicationWindow):
             self._toast_overlay.add_toast(toast)
 
     def _show_whats_new(self, *args) -> None:
-        tr = gettext.gettext
-        changes = WHATS_NEW.get(APP_VERSION, [])
-        if not changes:
-            return
-
         dialog = Adw.MessageDialog(transient_for=self, heading=f"What's new in Mural {APP_VERSION}")
         dialog.add_response("close", "Close")
         dialog.set_default_response("close")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_size_request(380, 320)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         box.set_margin_top(4)
-        box.set_margin_bottom(4)
+        box.set_margin_bottom(8)
         box.set_margin_start(4)
         box.set_margin_end(4)
 
-        for icon, title, desc in changes:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            row.set_valign(Gtk.Align.START)
+        for version in sorted(WHATS_NEW.keys(), reverse=True):
+            changes = WHATS_NEW[version]
+            if not changes:
+                continue
 
-            emoji_lbl = Gtk.Label(label=icon)
-            emoji_lbl.set_valign(Gtk.Align.START)
-            emoji_lbl.set_margin_top(2)
-            row.append(emoji_lbl)
+            # Version header
+            ver_lbl = Gtk.Label()
+            is_current = version == APP_VERSION
+            ver_lbl.set_markup(f"<b>v{version}</b>" + (" — <small><i>current</i></small>" if is_current else ""))
+            ver_lbl.set_xalign(0)
+            ver_lbl.set_margin_top(4 if version == APP_VERSION else 8)
+            ver_lbl.set_margin_bottom(4)
+            box.append(ver_lbl)
 
-            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            title_lbl = Gtk.Label()
-            title_lbl.set_markup(f"<b>{title}</b>")
-            title_lbl.set_xalign(0)
-            desc_lbl = Gtk.Label(label=desc)
-            desc_lbl.set_xalign(0)
-            desc_lbl.set_wrap(True)
-            desc_lbl.set_max_width_chars(40)
-            desc_lbl.add_css_class("dim-label")
-            text_box.append(title_lbl)
-            text_box.append(desc_lbl)
-            row.append(text_box)
-            box.append(row)
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            sep.set_margin_bottom(6)
+            box.append(sep)
 
-        dialog.set_extra_child(box)
+            for icon, title, desc in changes:
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+                row.set_valign(Gtk.Align.START)
+                row.set_margin_bottom(6)
+
+                emoji_lbl = Gtk.Label(label=icon)
+                emoji_lbl.set_valign(Gtk.Align.START)
+                emoji_lbl.set_margin_top(2)
+                row.append(emoji_lbl)
+
+                text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+                title_lbl = Gtk.Label()
+                title_lbl.set_markup(f"<b>{title}</b>")
+                title_lbl.set_xalign(0)
+                desc_lbl = Gtk.Label(label=desc)
+                desc_lbl.set_xalign(0)
+                desc_lbl.set_wrap(True)
+                desc_lbl.set_max_width_chars(42)
+                desc_lbl.add_css_class("dim-label")
+                text_box.append(title_lbl)
+                text_box.append(desc_lbl)
+                row.append(text_box)
+                box.append(row)
+
+        scroll.set_child(box)
+        dialog.set_extra_child(scroll)
         dialog.connect("response", lambda d, r: None)
         dialog.present()
 
@@ -1034,6 +1062,13 @@ class MuralWindow(Adw.ApplicationWindow):
         else:
             self.settings.slideshow_monitors = checked
         self._schedule_save()
+
+    def _set_sort(self, mode: str) -> None:
+        self._sort_mode = mode
+        self._texture_cache.clear()
+        self._load_gallery()
+        label = _("Name") if mode == "name" else _("Date")
+        self._status(f"↕ " + _("Sort by") + f": {label}")
 
     def _on_search_changed(self, entry):
         self._search_text = (entry.get_text() or "").strip().lower()
@@ -1296,7 +1331,68 @@ class MuralWindow(Adw.ApplicationWindow):
         self.add_controller(controller)
 
     def _on_key_shortcut(self, controller, keyval, keycode, state):
+        # Enter: apply selected wallpaper
+        if keyval == Gdk.KEY_Return or keyval == Gdk.KEY_KP_Enter:
+            if self.btn_apply.get_sensitive():
+                self._on_apply(None)
+            return True
+
+        # Space: toggle fullscreen preview
+        if keyval == Gdk.KEY_space:
+            if self.selected_image and Path(self.selected_image).exists():
+                self._show_fullscreen_preview(self.selected_image)
+            return True
+
         return False
+
+    def _show_fullscreen_preview(self, path: str) -> None:
+        """Shows a fullscreen preview of the selected image."""
+        win = Gtk.Window(transient_for=self, modal=True)
+        win.set_title(Path(path).name)
+        win.fullscreen()
+
+        pic = Gtk.Picture()
+        pic.set_content_fit(Gtk.ContentFit.CONTAIN)
+        pic.set_can_shrink(True)
+        pic.set_hexpand(True)
+        pic.set_vexpand(True)
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(pic)
+
+        # Close hint label
+        hint = Gtk.Label(label=_("Press Escape or Space to close"))
+        hint.add_css_class("dim-label")
+        hint.set_halign(Gtk.Align.CENTER)
+        hint.set_valign(Gtk.Align.END)
+        hint.set_margin_bottom(16)
+        overlay.add_overlay(hint)
+
+        win.set_child(overlay)
+
+        # Load image in thread
+        def _load():
+            result = ImageLoader.load_for_preview(path, 3840, 2160)
+            if result:
+                raw, w, h, has_alpha = result
+                def _set():
+                    from gi.repository import GLib as _GL
+                    gbytes = _GL.Bytes.new(raw)
+                    fmt = Gdk.MemoryFormat.R8G8B8A8 if has_alpha else Gdk.MemoryFormat.R8G8B8
+                    stride = w * (4 if has_alpha else 3)
+                    texture = Gdk.MemoryTexture.new(w, h, fmt, gbytes, stride)
+                    pic.set_paintable(texture)
+                    return False
+                GLib.idle_add(_set)
+        threading.Thread(target=_load, daemon=True).start()
+
+        # Close on Escape or Space
+        key_ctrl = Gtk.EventControllerKey.new()
+        key_ctrl.connect("key-pressed", lambda c, kv, kc, s: win.close() or True
+                         if kv in (Gdk.KEY_Escape, Gdk.KEY_space) else False)
+        win.add_controller(key_ctrl)
+
+        win.present()
 
     def _refresh_flowbox_columns(self) -> bool:
         self._column_update_id = None
@@ -1378,9 +1474,9 @@ class MuralWindow(Adw.ApplicationWindow):
         try:
             sz = p.stat().st_size
             if sz > 1_048_576:
-                self.lbl_size.set_text(f"{sz / 1_048_576:.1f} Mo")
+                self.lbl_size.set_text(f"{sz / 1_048_576:.1f} MB")
             else:
-                self.lbl_size.set_text(f"{sz / 1024:.0f} Ko")
+                self.lbl_size.set_text(f"{sz / 1024:.0f} KB")
         except Exception:
             self.lbl_size.set_text("")
 
@@ -1416,6 +1512,15 @@ class MuralWindow(Adw.ApplicationWindow):
         if mode:
             if mode in self.mode_ids:
                 self.mode_dropdown.set_selected(self.mode_ids.index(mode))
+
+        # Load monitor 0 folder on startup if assigned
+        if self.monitors:
+            conn0 = self.monitors[0].connector
+            folder0 = self.settings.monitor_folders.get(conn0, "")
+            if folder0 and Path(folder0).exists() and str(self.folder) != folder0:
+                self.folder = Path(folder0)
+                self.settings.folder = folder0
+                self.row_current_folder.set_subtitle(folder0)
 
 
     def _on_monitor_toggle(self, btn, index: int) -> None:
@@ -1497,6 +1602,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.settings.folder = str(self.folder)
         self._schedule_save()
         self.row_current_folder.set_subtitle(str(self.folder))
+        self._texture_cache.clear()
         self._load_gallery()
 
     def _on_choose_folder_dialog(self, dialog, result):
@@ -1698,10 +1804,14 @@ class MuralWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._set_progress_visibility, False)
             return
         try:
-            files = sorted(
+            raw_files = [
                 f for f in folder.iterdir()
                 if f.is_file() and f.suffix.lower() in Config.VALID_EXT
-            )[:Config.MAX_IMAGES]
+            ]
+            if getattr(self, "_sort_mode", "name") == "date":
+                files = sorted(raw_files, key=lambda f: f.stat().st_mtime, reverse=True)[:Config.MAX_IMAGES]
+            else:
+                files = sorted(raw_files)[:Config.MAX_IMAGES]
         except PermissionError:
             GLib.idle_add(self._status, _("Permission denied"))
             GLib.idle_add(self._set_progress_visibility, False)
@@ -1762,19 +1872,6 @@ class MuralWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._gallery_done, total)
             GLib.idle_add(self.flowbox.invalidate_filter)
         gc.collect()
-
-    def _add_thumb_batch(
-        self,
-        items: List[Tuple[Path, object]],
-        done_event: Optional[threading.Event],
-    ) -> bool:
-        for fpath, obj in items:
-            if self._stop_event.is_set():
-                break
-            self._add_thumb(fpath, obj)
-        if done_event is not None:
-            done_event.set()
-        return False
 
     def _add_thumb_batch_counted(self, items: list) -> bool:
         for fpath, obj in items:
@@ -1913,7 +2010,7 @@ class MuralWindow(Adw.ApplicationWindow):
     def _do_save(self) -> bool:
         self._save_timeout_id = None
         self.config.save(self.settings)
-        logger.debug("Config sauvegardée")
+        logger.debug("Config saved")
         return False
 
     def _on_close_request(self, *_) -> bool:
@@ -1934,17 +2031,17 @@ class MuralApplication(Adw.Application):
     def do_activate(self):
         """This method is called when launching 'mural'"""
         try:
-            print("DEBUG: Entering do_activate")
+            logger.debug("Entering do_activate")
             
             # Check if a window already exists
             win = self.get_active_window()
             
             if not win:
-                print("DEBUG: Creating new MuralWindow")
+                logger.debug("Creating new MuralWindow")
                 # Ensure window class is named MuralWindow
                 win = MuralWindow(application=self)
             
-            print("DEBUG: Showing window (present)")
+            logger.debug("Showing window")
             win.present() # This is THE line that prevents program from quitting immediately
         except Exception as e:
             # This will give us the real reason for the crash

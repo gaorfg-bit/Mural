@@ -29,15 +29,15 @@ from gi.repository import GLib
 
 logger = logging.getLogger("mural.avif_cache")
 
-AVIF_QUALITY = 55       # 0-100, ~60-75% de gain selon la source
+AVIF_QUALITY = 55       # 0-100, ~60-75% file size reduction depending on source
 AVIF_WORKERS = 3
 CACHE_DIRNAME = ".mural_cache"
 
 
 def _find_imagemagick() -> Optional[str]:
     """Returns the path of the available ImageMagick command."""
-    # ImageMagick 7 : commande 'magick'
-    # ImageMagick 6 : commande 'convert'
+    # ImageMagick 7: command 'magick'
+    # ImageMagick 6: command 'convert'
     for cmd in ("magick", "convert"):
         path = shutil.which(cmd)
         if path:

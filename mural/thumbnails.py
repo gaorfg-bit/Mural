@@ -43,12 +43,12 @@ class Thumbnailer:
                 ratio = max(tw / img.width, th / img.height)
                 new_w = int(img.width * ratio)
                 new_h = int(img.height * ratio)
-                # BILINEAR: 3x faster, invisible at this size
-                thumb = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
+                # LANCZOS: better quality for larger thumbnails
+                thumb = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
                 left = (new_w - tw) // 2
                 top  = (new_h - th) // 2
                 thumb = thumb.crop((left, top, left + tw, top + th))
-                thumb.save(str(cached), "JPEG", quality=82, optimize=False)
+                thumb.save(str(cached), "JPEG", quality=92, optimize=False)
                 # with block releases img and thumb here
             return cached
 

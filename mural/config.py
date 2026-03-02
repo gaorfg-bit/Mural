@@ -23,11 +23,11 @@ class Config:
     THUMB_DIR = Path(GLib.get_user_cache_dir()) / "mural" / "thumbnails"
     AVIF_DIR = Path(GLib.get_user_cache_dir()) / "mural" / "avif"  # XDG_CACHE_HOME — compatible Flatpak sandbox
     THUMBNAIL_ASPECT = 220 / 360
-    THUMBNAIL_SIZE = 120
+    THUMBNAIL_SIZE = 180
     THUMB_W = THUMBNAIL_SIZE
     THUMB_H = max(1, int(round(THUMBNAIL_SIZE * THUMBNAIL_ASPECT)))
     MAX_IMAGES = 500
-    PREVIEW_MAX_HEIGHT = 200
+    PREVIEW_MAX_HEIGHT = 260
     PREVIEW_MIN_HEIGHT = 140
 
     def __init__(self):
