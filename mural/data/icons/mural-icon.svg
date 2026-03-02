@@ -1,0 +1,47 @@
+<!--?xml version="1.0" encoding="UTF-8"?-->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Base blue, subtle top-light -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#35b7ff"></stop>
+      <stop offset="1" stop-color="#2f9af2"></stop>
+    </linearGradient>
+
+    <clipPath id="clipBase" clipPathUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="128" height="128" rx="28"></rect>
+    </clipPath>
+  </defs>
+
+  <!-- Everything in one clipped group to avoid seams/holes -->
+  <g clip-path="url(#clipBase)">
+
+    <!-- Base fill -->
+    <rect x="0" y="0" width="128" height="128" fill="url(#bg)"></rect>
+
+    <!-- Soft diagonal band (single clean shape) -->
+    <path d="
+      M -18 64
+      Q 22 28 64 44
+      T 150 86
+      L 150 116
+      Q 108 100 64 82
+      T -18 88
+      Z" fill="#bfe6ff" opacity="0.78"></path>
+
+    <!-- Slight darker counter-band under it (very subtle, like your ref) -->
+    <path d="
+      M -18 88
+      Q 22 52 64 68
+      T 150 110
+      L 150 140
+      Q 106 124 64 106
+      T -18 112
+      Z" fill="#2b8fe6" opacity="0.22"></path>
+
+    <!-- Sun/Moon -->
+    <circle cx="98" cy="26" r="10" fill="#f6f5f4"></circle>
+
+  </g>
+
+</svg>
