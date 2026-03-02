@@ -53,6 +53,8 @@ Have a large collection? Mural can convert your images to AVIF and cut their fil
 
 ---
 
+⭐ Available via official Ubuntu PPA  
+
 ## Install on Ubuntu 24.04 (Noble and Questing)
 
 sudo add-apt-repository ppa:gaor/mural
