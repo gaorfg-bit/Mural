@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="mural/data/icons/io.github.gaorfg-bit.Mural.png" alt="Mural Icon" width="64">
+  <img src="assets/logo.png" width="1000" style="background-color:#111; padding:20px; border-radius:12px;">
 </p>
-
-<h1 align="center">Mural</h1>
-
 <p align="center">
   <strong>The wallpaper manager GNOME was missing.</strong>
 </p>
