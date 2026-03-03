@@ -1,5 +1,6 @@
-mural (1.1.1-2~noble1) noble; urgency=medium
+mural (1.1.2-2~noble1) noble; urgency=medium
 
-  * Rebuild after signing the Ubuntu Code of Conduct.
+  * Fix debian/install: mural-launcher installed as directory instead of binary
 
- -- GaoR <gaor.mural@proton.me>  Mon, 02 Mar 2026 19:30:00 +0100
+ -- GaoR <gaor.mural@proton.me>  Tue, 03 Mar 2026 16:00:00 +0100
+

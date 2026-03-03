@@ -2,10 +2,11 @@
 Name=Mural
 Comment=Wallpaper Manager
 Exec=/usr/bin/mural-launcher
-Icon=mural-app
+Icon=io.github.gaorfgbit.Mural
 Type=Application
 Terminal=false
 Categories=Utility;Settings;
 StartupNotify=true
-StartupWMClass=io.github.gaorfg_bit.Mural
+StartupWMClass=io.github.gaorfgbit.Mural
+DBusActivatable=true
 Keywords=wallpaper;background;

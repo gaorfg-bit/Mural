@@ -2,7 +2,7 @@ Source: mural
 Section: misc
 Priority: optional
 Maintainer: GaoR <gaor.mural@proton.me>
-Build-Depends: debhelper-compat (= 13), python3
+Build-Depends: debhelper-compat (= 13), python3, dh-python
 Standards-Version: 4.6.2
 Homepage: https://github.com/gaorfg-bit/mural
 

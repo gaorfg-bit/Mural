@@ -12,11 +12,10 @@ rm -f "$HOME/.local/bin/mural-launcher"
 
 # Desktop entries (all possible names)
 rm -f "$HOME/.local/share/applications/mural.desktop"
-rm -f "$HOME/.local/share/applications/io.github.gaorfg-bit.Mural.desktop"
+rm -f "$HOME/.local/share/applications/io.github.gaorfgbit.Mural.desktop"
 
 # Icons (all possible locations)
-rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.gaorfg-bit.Mural.svg"
-rm -f "$HOME/.local/share/icons/hicolor/48x48/apps/mural-app.png"
+rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.gaorfgbit.Mural.svg"
 
 # Force GNOME to remove the icon from the app list immediately
 update-desktop-database "$HOME/.local/share/applications"

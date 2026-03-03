@@ -7,12 +7,6 @@
   Per-monitor wallpapers. Slideshow. Native GTK4.
 </p>
 
-<p align="center">
-  <a href="https://ko-fi.com/M4M51RKN7V">
-    <img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi">
-  </a>
-</p>
-
 <hr>
 
 <h2>Install (Ubuntu 24.04+)</h2>

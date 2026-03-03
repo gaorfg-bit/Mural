@@ -963,7 +963,7 @@ class MuralWindow(Adw.ApplicationWindow):
             win.set_version(APP_VERSION)
             win.set_developer_name("GaoR")
             win.set_developers(["GaoR"])
-            win.set_application_icon("io.github.gaorfg_bit.Mural")
+            win.set_application_icon("io.github.gaorfgbit.Mural")
             win.set_website("https://github.com/gaorfg-bit/mural")
             win.set_issue_url("https://github.com/gaorfg-bit/mural/issues")
             win.set_copyright("© 2026 GaoR")
@@ -2026,7 +2026,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
 class MuralApplication(Adw.Application):
     def __init__(self, **kwargs):
-        super().__init__(application_id="io.github.gaorfg_bit.Mural", **kwargs)
+        super().__init__(application_id="io.github.gaorfgbit.Mural", **kwargs)
 
     def do_activate(self):
         """This method is called when launching 'mural'"""

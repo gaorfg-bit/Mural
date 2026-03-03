@@ -8,41 +8,42 @@ LAUNCHER="mural-launcher"
 TGT="$HOME/.local/share/$APP"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
-ICO_DIR="$HOME/.local/share/icons/hicolor/48x48/apps"
+ICON_SCALABLE_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 
 echo "Deep cleaning..."
-rm -f "$APP_DIR/io.github.gaorfg-bit.Mural.desktop"
 rm -f "$HOME/.local/share/applications/mural.desktop"
+rm -f "$HOME/.local/share/applications/io.github.gaorfgbit.Mural.desktop"
 
 echo "Installing..."
-mkdir -p "$TGT" "$BIN_DIR" "$APP_DIR" "$ICO_DIR"
+mkdir -p "$TGT" "$BIN_DIR" "$APP_DIR" "$ICON_SCALABLE_DIR"
 cp -r "$DIR/mural" "$DIR/LICENSE" "$DIR/requirements.txt" "$TGT/"
 
-# Icon fix
-cp "$TGT/mural/data/icons/io.github.gaorfg-bit.Mural.png" "$ICO_DIR/mural-app.png"
+# Icon install
+cp "$TGT/mural/data/icons/io.github.gaorfgbit.Mural.svg" "$ICON_SCALABLE_DIR/io.github.gaorfgbit.Mural.svg"
 
 echo "Creating wrapper..."
 install -m 755 "$DIR/scripts/$LAUNCHER" "$BIN_DIR/$LAUNCHER"
 ln -sf "$BIN_DIR/$LAUNCHER" "$BIN_DIR/$APP"
 chmod +x "$BIN_DIR/$LAUNCHER"
 
-echo "Creating desktop file (simple ID)..."
-cat <<EOF > "$APP_DIR/mural.desktop"
+echo "Creating desktop file (reverse-DNS ID)..."
+cat <<EOF > "$APP_DIR/io.github.gaorfgbit.Mural.desktop"
 [Desktop Entry]
 Name=Mural
 Comment=Wallpaper Manager
 Exec=$LAUNCHER
-Icon=mural-app
+Icon=io.github.gaorfgbit.Mural
 Type=Application
 Terminal=false
 Categories=Utility;Settings;
 StartupNotify=true
-StartupWMClass=io.github.gaorfg_bit.Mural
+StartupWMClass=io.github.gaorfgbit.Mural
+DBusActivatable=true
 Keywords=wallpaper;background;
 EOF
 
 echo "Forcing GNOME refresh..."
-chmod +x "$APP_DIR/mural.desktop"
+chmod +x "$APP_DIR/io.github.gaorfgbit.Mural.desktop"
 update-desktop-database "$APP_DIR"
 gtk4-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor/"
 
