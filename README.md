@@ -16,10 +16,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
 </p>
 
----
-
-## Demo
-
 <p align="center">
   <a href="https://www.youtube.com/watch?v=jEkizpNf0B0">
     <img src="https://img.youtube.com/vi/jEkizpNf0B0/maxresdefault.jpg" alt="Mural Demo Video" width="900">
@@ -28,31 +24,34 @@
 
 ---
 
-## What you can do with Mural
+## What Mural does
 
-**Browse and apply**
-Open a folder, scroll through thumbnails, click an image to preview it full size, then apply it. That's it.
+One wallpaper per monitor.  
+Saved. Persistent. No overwriting.
 
-**A different wallpaper on each screen**
-Got two monitors? Pick one image for your main display, another for the second. Mural handles everything — no manual setup needed.
+Browse any folder.  
+Preview instantly. Apply instantly.
 
-**Automatic slideshow**
-Turn on auto-rotation and Mural will change your wallpaper every X minutes. Random or sequential, on all your screens or just some of them.
+Built-in slideshow engine.  
+Random or sequential. Your choice.
 
-**AVIF compression** *(optional)*
-Have a large collection? Mural can convert your images to AVIF and cut their file size in half — without ever touching the originals.
+Optional AVIF conversion.  
+Smaller files. Originals untouched.
 
+---
 ---
 
 <p align="center">
   <img src="assets/Mural.png" alt="Mural Screenshot" width="900">
 </p>
 
----
 
-⭐ Available via official Ubuntu PPA  
+<h1>⭐ Available via official Ubuntu PPA ⭐</h1>   
 
-## Install on Ubuntu 24.04 (Noble and Questing)
+
+## Install
+
+### Ubuntu 24.04+ (recommended)
 
 ```bash
 sudo add-apt-repository ppa:gaor/mural
@@ -60,36 +59,36 @@ sudo apt update
 sudo apt install mural
 ```
 
-### Installation Script
+Manual install
+
+Use this only if you don’t want the PPA.
+
+Step 1 — Install dependencies
+
+Ubuntu / Debian:
 
 ```bash
-# Ubuntu / Debian
 sudo apt install python3-gi python3-pil gir1.2-gtk-4.0 gir1.2-adw-1
-
-# Fedora
-sudo dnf install python3-gobject python3-pillow gtk4 libadwaita
-
-# Arch
-sudo pacman -S python-gobject python-pillow gtk4 libadwaita
 ```
 
-### Install
-
+Fedora:
 ```bash
+sudo dnf install python3-gobject python3-pillow gtk4 libadwaita
+```
+Arch:
+```bash
+sudo pacman -S python-gobject python-pillow gtk4 libadwaita
+Step 2 — Download Mural
 git clone https://github.com/gaorfg-bit/mural
 cd mural
+Step 3 — Install locally
 pip install -r requirements.txt
 ./install.sh
 ```
-
-That's it. Mural will appear in your GNOME Activities as **Mural**. No system-wide changes — everything installs in your home folder.
-
-### Uninstall
-
+To uninstall:
 ```bash
 ./uninstall.sh
 ```
-
 Removes the app, icon and desktop entry. Your config and wallpaper settings are kept.
 
 ---
