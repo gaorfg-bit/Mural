@@ -27,13 +27,13 @@ gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango
 
-from backend import GnomeBackend
-from config import Config
-from daemon import MuralDaemonProxy
-from monitors import MonitorDetector
-from slideshow import SlideshowManager
-from thumbnails import ImageLoader, Thumbnailer
-from avif_cache import get_cached_avif, AVIF_SUPPORTED
+from mural.backend import GnomeBackend
+from mural.config import Config
+from mural.daemon import MuralDaemonProxy
+from mural.monitors import MonitorDetector
+from mural.slideshow import SlideshowManager
+from mural.thumbnails import ImageLoader, Thumbnailer
+from mural.avif_cache import get_cached_avif, AVIF_SUPPORTED
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -121,7 +121,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.backend = GnomeBackend()
         self.slideshow = SlideshowManager(self)
         self._daemon = MuralDaemonProxy()
-        from avif_cache import FolderConverter
+        from mural.avif_cache import FolderConverter
         self.avif_converter = FolderConverter()
         self.monitors = MonitorDetector.detect()
         self.current_monitor = 0
@@ -700,7 +700,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._avif_progress_label.set_visible(True)
         self._avif_progress_bar.set_fraction(0)
         self._avif_progress_label.set_text(_("Starting…"))
-        from config import Config
+        from mural.config import Config
         self.avif_converter.convert_folder(
             folder=self.folder,
             valid_extensions=Config.VALID_EXT,

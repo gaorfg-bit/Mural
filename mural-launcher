@@ -1,0 +1,3 @@
+#!/bin/bash
+export PYTHONPATH="/usr/share"
+python3 -m mural.main "$@"

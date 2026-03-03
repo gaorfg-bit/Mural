@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from PIL import Image
 from gi.repository import Gio, GLib
 
-from models import MonitorInfo
+from mural.models import MonitorInfo
 
 logger = logging.getLogger("wallpaper")
 

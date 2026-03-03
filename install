@@ -1,0 +1,4 @@
+mural/                                           usr/share/mural/
+debian/mural.sh                                  usr/bin/mural
+debian/mural.desktop                             usr/share/applications/
+mural/data/icons/io.github.gaorfg-bit.Mural.png  usr/share/icons/hicolor/48x48/apps/mural-app.png

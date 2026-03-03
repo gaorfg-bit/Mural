@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Mural
+Comment=Wallpaper Manager
+Exec=/usr/bin/mural
+Icon=mural-app
+Type=Application
+Terminal=false
+Categories=Utility;Settings;
+StartupNotify=true
+StartupWMClass=io.github.gaorfg_bit.Mural
+Keywords=wallpaper;background;
