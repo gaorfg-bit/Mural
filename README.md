@@ -1,149 +1,68 @@
 <p align="center">
-  <img src="assets/logo.png" width="1000" style="background-color:#111; padding:20px; border-radius:12px;">
-</p>
-<p align="center">
-  <strong>The wallpaper manager GNOME was missing.</strong>
+  <img src="assets/logo.png" width="850">
 </p>
 
 <p align="center">
-   <a href="https://ko-fi.com/M4M51RKN7V"><img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi"></a>
+  <strong>Wallpaper manager for GNOME.</strong><br>
+  Per-monitor wallpapers. Slideshow. Native GTK4.
 </p>
 
 <p align="center">
-  <a href="https://gnome.org"><img src="https://img.shields.io/badge/GNOME-46%2B-blue?logo=gnome" alt="GNOME 46+"></a>
-  <a href="https://wayland.freedesktop.org"><img src="https://img.shields.io/badge/Wayland-✓-green" alt="Wayland"></a>
-  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11%2B-yellow?logo=python" alt="Python"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-red" alt="License"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=jEkizpNf0B0">
-    <img src="https://img.youtube.com/vi/jEkizpNf0B0/maxresdefault.jpg" alt="Mural Demo Video" width="900">
+  <a href="https://ko-fi.com/M4M51RKN7V">
+    <img src="https://img.shields.io/badge/Support%20me-on%20Ko--fi-orange?logo=ko-fi" alt="Ko-fi">
   </a>
 </p>
 
----
+<hr>
 
-## What Mural does
+<h2>Install (Ubuntu 24.04+)</h2>
 
-One wallpaper per monitor.  
-Saved. Persistent. No overwriting.
+<p>Recommended method.</p>
 
-Browse any folder.  
-Preview instantly. Apply instantly.
+<pre><code>sudo add-apt-repository ppa:gaor/mural
+sudo apt update
+sudo apt install mural</code></pre>
 
-Built-in slideshow engine.  
-Random or sequential. Your choice.
+<p>Launch <strong>Mural</strong> from GNOME Activities.</p>
 
-Optional AVIF conversion.  
-Smaller files. Originals untouched.
+<hr>
 
----
----
+<h2>Manual install (no PPA)</h2>
+
+<p><strong>Step 1 — Install dependencies</strong></p>
+
+<pre><code>sudo apt install python3-gi python3-pil gir1.2-gtk-4.0 gir1.2-adw-1</code></pre>
+
+<p><strong>Step 2 — Download and install</strong></p>
+
+<pre><code>git clone https://github.com/gaorfg-bit/mural
+cd mural
+pip install -r requirements.txt
+./install.sh</code></pre>
+
+<p><strong>Uninstall:</strong></p>
+
+<pre><code>./uninstall.sh</code></pre>
+
+<hr>
+
+<h2>Features</h2>
+
+<ul>
+  <li>Independent wallpapers per monitor</li>
+  <li>No overwriting</li>
+  <li>Slideshow mode</li>
+  <li>Optional AVIF compression</li>
+</ul>
+
+<hr>
 
 <p align="center">
-  <img src="assets/Mural.png" alt="Mural Screenshot" width="900">
+  <img src="assets/Mural.png" width="900">
 </p>
 
+<hr>
 
-<h1>⭐ Available via official Ubuntu PPA ⭐</h1>   
+<p>GNOME 46+, Wayland or X11.</p>
 
-
-## Install
-
-### Ubuntu 24.04+ (recommended)
-
-```bash
-sudo add-apt-repository ppa:gaor/mural
-sudo apt update
-sudo apt install mural
-```
-
-Manual install
-
-Use this only if you don’t want the PPA.
-
-Step 1 — Install dependencies
-
-Ubuntu / Debian:
-
-```bash
-sudo apt install python3-gi python3-pil gir1.2-gtk-4.0 gir1.2-adw-1
-```
-
-Fedora:
-```bash
-sudo dnf install python3-gobject python3-pillow gtk4 libadwaita
-```
-Arch:
-```bash
-sudo pacman -S python-gobject python-pillow gtk4 libadwaita
-Step 2 — Download Mural
-git clone https://github.com/gaorfg-bit/mural
-cd mural
-Step 3 — Install locally
-pip install -r requirements.txt
-./install.sh
-```
-To uninstall:
-```bash
-./uninstall.sh
-```
-Removes the app, icon and desktop entry. Your config and wallpaper settings are kept.
-
----
-
-## Multi-monitor setup
-
-For a different wallpaper on each screen, run this once:
-
-```bash
-gsettings set org.gnome.desktop.background picture-options spanned
-```
-
-Mural takes care of the rest.
-
----
-
-## Changelog
-
-### v1.1.1
-- Thumbnails are now sharper and larger. Clear the cache once after updating to regenerate them.
-- Keyboard shortcuts: press Enter to apply the selected wallpaper, Space for a fullscreen preview.
-- Sort gallery by name or by date via right-click on any thumbnail.
-- Sidebar button now acts as a pin: click to lock it open permanently, hover still works when unpinned.
-- Texture cache is cleared when switching folders, reducing RAM usage over long sessions.
-- Removed leftover debug output that was printing to the terminal on every launch.
-- File sizes now displayed in MB/KB.
-- All remaining French strings in the source code have been translated to English.
-
-### v1.1
-- Independent monitors by default — "Same image on all" is now unchecked by default. Each monitor manages its wallpaper independently, and the preference is saved between sessions.
-- No more overwriting — Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers.
-- Dock icon fixed — Mural now shows its proper icon in the taskbar instead of the generic terminal script icon.
-- What's new dialog — A popup shows what changed on first launch after an update. Accessible anytime from the app menu.
-- Cleaner uninstall — `uninstall.sh` now properly removes the icon and desktop entry so Mural disappears from the app list immediately.
-
----
-
-## Compatibility
-
-Mural works on **GNOME 46 and above**, on both Wayland and X11, with or without multiple monitors.
-
----
-
-## Contributing
-
-Got an idea, found a bug, or want to add KDE support? Issues and PRs are welcome.
-
----
-
-## Built with
-
-This project was designed and built with the assistance of AI. The ideas, decisions, and direction are mine — AI was used as a tool throughout development.
-
----
-
-## License
-
-GPL-3.0 — © 2026 GaoR
+<p>GPL-3.0 — © 2026 GaoR</p>
