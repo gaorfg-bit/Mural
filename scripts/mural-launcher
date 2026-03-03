@@ -1,3 +1,10 @@
 #!/bin/bash
-export PYTHONPATH="/usr/share"
-python3 -m mural.main "$@"
+if [ -d "/usr/share/mural/mural" ]; then
+  export PYTHONPATH="/usr/share/mural"
+  exec python3 "/usr/share/mural/mural/main.py" "$@"
+else
+  APP="mural"
+  TGT="$HOME/.local/share/$APP"
+  export PYTHONPATH="$TGT"
+  exec python3 "$TGT/mural/main.py" "$@"
+fi

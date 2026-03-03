@@ -1,4 +1,5 @@
 __pycache__/
+mural/__pycache__/
 *.pyc
 *.pyo
 .cache/

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Mural
 Comment=Wallpaper Manager
-Exec=/usr/bin/mural
+Exec=/usr/bin/mural-launcher
 Icon=mural-app
 Type=Application
 Terminal=false

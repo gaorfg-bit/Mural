@@ -1,7 +1,10 @@
 #!/bin/bash
 # Mural - GNOME Force Recognition
 
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
 APP="mural"
+LAUNCHER="mural-launcher"
 TGT="$HOME/.local/share/$APP"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
@@ -13,25 +16,22 @@ rm -f "$HOME/.local/share/applications/mural.desktop"
 
 echo "Installing..."
 mkdir -p "$TGT" "$BIN_DIR" "$APP_DIR" "$ICO_DIR"
-cp -r mural LICENSE requirements.txt "$TGT/"
+cp -r "$DIR/mural" "$DIR/LICENSE" "$DIR/requirements.txt" "$TGT/"
 
 # Icon fix
 cp "$TGT/mural/data/icons/io.github.gaorfg-bit.Mural.png" "$ICO_DIR/mural-app.png"
 
 echo "Creating wrapper..."
-cat <<EOF > "$BIN_DIR/$APP"
-#!/bin/bash
-export PYTHONPATH="$TGT"
-exec python3 "$TGT/mural/main.py" "\$@"
-EOF
-chmod +x "$BIN_DIR/$APP"
+install -m 755 "$DIR/scripts/$LAUNCHER" "$BIN_DIR/$LAUNCHER"
+ln -sf "$BIN_DIR/$LAUNCHER" "$BIN_DIR/$APP"
+chmod +x "$BIN_DIR/$LAUNCHER"
 
 echo "Creating desktop file (simple ID)..."
 cat <<EOF > "$APP_DIR/mural.desktop"
 [Desktop Entry]
 Name=Mural
 Comment=Wallpaper Manager
-Exec=$BIN_DIR/$APP
+Exec=$LAUNCHER
 Icon=mural-app
 Type=Application
 Terminal=false

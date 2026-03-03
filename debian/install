@@ -1,3 +1,4 @@
 mural/ usr/share/mural/
+scripts/mural-launcher usr/bin/mural-launcher
 mural.desktop usr/share/applications/
 assets/mural-app.png usr/share/icons/hicolor/256x256/apps/

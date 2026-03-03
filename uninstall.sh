@@ -8,6 +8,7 @@ echo "Removing $APP..."
 # App files
 rm -rf "$HOME/.local/share/$APP"
 rm -f "$HOME/.local/bin/$APP"
+rm -f "$HOME/.local/bin/mural-launcher"
 
 # Desktop entries (all possible names)
 rm -f "$HOME/.local/share/applications/mural.desktop"
