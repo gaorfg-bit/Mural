@@ -1,10 +1,20 @@
 #!/bin/bash
-if [ -d "/usr/share/mural/mural" ]; then
-  export PYTHONPATH="/usr/share/mural"
-  exec python3 "/usr/share/mural/mural/main.py" "$@"
+set -euo pipefail
+
+APP="mural"
+USER_DIR="$HOME/.local/share/$APP"
+SYS_DIR="/usr/share/$APP"
+
+if [ -f "$USER_DIR/mural/main.py" ]; then
+  export PYTHONPATH="$USER_DIR"
+  exec python3 "$USER_DIR/mural/main.py" "$@"
+elif [ -f "$SYS_DIR/mural/main.py" ]; then
+  export PYTHONPATH="$SYS_DIR"
+  exec python3 "$SYS_DIR/mural/main.py" "$@"
 else
-  APP="mural"
-  TGT="$HOME/.local/share/$APP"
-  export PYTHONPATH="$TGT"
-  exec python3 "$TGT/mural/main.py" "$@"
+  echo "Mural non installé: aucune installation valide trouvée." >&2
+  echo "Chemins testés:" >&2
+  echo "  - $USER_DIR/mural/main.py" >&2
+  echo "  - $SYS_DIR/mural/main.py" >&2
+  exit 1
 fi

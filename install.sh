@@ -16,9 +16,15 @@ rm -f "$HOME/.local/share/applications/mural.desktop"
 rm -f "$HOME/.local/share/applications/io.github.gaorfgbit.Mural.desktop"
 rm -rf "$TGT"
 
+if [ -d "/usr/share/mural" ] && [ ! -f "/usr/share/mural/mural/main.py" ]; then
+  echo "Warning: incomplete system installation detected in /usr/share/mural"
+  echo "The user installation in $TGT will be preferred by the launcher."
+fi
+
 echo "Installing..."
 mkdir -p "$TGT" "$BIN_DIR" "$APP_DIR" "$ICON_SCALABLE_DIR" "$SYSTEMD_DIR"
 cp -r "$DIR/mural" "$DIR/LICENSE" "$DIR/requirements.txt" "$TGT/"
+printf "%s\n" "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$TGT/.install_stamp"
 
 echo "Installing icon..."
 cp "$TGT/mural/data/icons/io.github.gaorfgbit.Mural.svg" "$ICON_SCALABLE_DIR/io.github.gaorfgbit.Mural.svg"
@@ -54,7 +60,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 $TGT/mural/mural-daemon-service.py
+ExecStart=/usr/bin/env python3 %h/.local/share/mural/mural/mural-daemon-service.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
