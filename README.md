@@ -7,7 +7,7 @@
   Per-monitor wallpapers. Slideshow. Native GTK4.
 </p>
 
-<h1>Install (no PPA)</h2>
+<h1>Install</h2>
 
 <p><strong>Step 1 — Install dependencies</strong></p>
 
