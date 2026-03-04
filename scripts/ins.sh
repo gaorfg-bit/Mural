@@ -1,6 +1,6 @@
 # --- Configuration de ton projet ---
 PROJECT_NAME="Mural
-VERSION="1.1.1"
+VERSION="1.1.2-2"
 MAINTAINER_NAME="GaoR"
 MAINTAINER_EMAIL="gregoryfaux@etik.com"
 DATE_DEB=$(date -R)

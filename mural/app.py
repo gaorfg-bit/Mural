@@ -68,7 +68,7 @@ sys.excepthook = _log_uncaught_exception
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = 268_435_456
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2-2"
 
 WHATS_NEW = {
     "1.1.1": [
@@ -951,7 +951,7 @@ class MuralWindow(Adw.ApplicationWindow):
             dialog.set_version(APP_VERSION)
             dialog.set_developer_name("GaoR")
             dialog.set_developers(["GaoR https://github.com/gaorfg-bit"])
-            dialog.set_application_icon("mural-app")
+            dialog.set_application_icon("io.github.gaorfgbit.Mural")
             dialog.set_website("https://github.com/gaorfg-bit/mural")
             dialog.set_issue_url("https://github.com/gaorfg-bit/mural/issues")
             dialog.set_copyright("© 2026 GaoR")

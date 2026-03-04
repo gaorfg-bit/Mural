@@ -7,21 +7,7 @@
   Per-monitor wallpapers. Slideshow. Native GTK4.
 </p>
 
-<hr>
-
-<h2>Install (Ubuntu 24.04+)</h2>
-
-<p>Recommended method.</p>
-
-<pre><code>sudo add-apt-repository ppa:gaor/mural
-sudo apt update
-sudo apt install mural</code></pre>
-
-<p>Launch <strong>Mural</strong> from GNOME Activities.</p>
-
-<hr>
-
-<h2>Manual install (no PPA)</h2>
+<h1>Install (no PPA)</h2>
 
 <p><strong>Step 1 — Install dependencies</strong></p>
 

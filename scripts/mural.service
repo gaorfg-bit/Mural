@@ -1,0 +1,17 @@
+[Unit]
+Description=Mural Wallpaper Daemon
+Documentation=https://github.com/gaorfg-bit/mural
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/share/mural/mural/mural-daemon-service.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target
