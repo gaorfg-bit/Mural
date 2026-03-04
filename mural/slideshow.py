@@ -17,6 +17,7 @@ class SlideshowManager:
         self._timeout_id: Optional[int] = None
         self._history: List[str] = []
         self._sequential_index: int = 0
+        self._sequential_index_per_monitor: dict[str, int] = {}
 
     def start(self) -> None:
         self.stop()
@@ -40,60 +41,66 @@ class SlideshowManager:
             self.start()
 
     def _tick(self) -> bool:
-        playlist = self._app.settings.resolve_slideshow_playlist()
-        if not playlist: 
+        target_connectors = (
+            list(self._app.settings.slideshow_monitors)
+            if self._app.settings.slideshow_monitors
+            else [m.connector for m in self._app.monitors]
+        )
+
+        assignments: dict[str, str] = dict(self._app.settings.per_monitor)
+        updated = False
+
+        for connector in target_connectors:
+            playlist = self._app.settings.resolve_slideshow_playlist(connector)
+            if not playlist:
+                # No dedicated favorites for this monitor: keep current image.
+                continue
+            if self._app.settings.slideshow_random:
+                import random
+                chosen = random.choice(playlist)
+            else:
+                idx = self._sequential_index_per_monitor.get(connector, 0) % len(playlist)
+                chosen = playlist[idx]
+                self._sequential_index_per_monitor[connector] = idx + 1
+            assignments[connector] = chosen
+            updated = True
+
+        if not updated:
             return True
 
-        # Selection logic
-        if self._app.settings.slideshow_random:
-            import random
-            path = random.choice(playlist)
-        else:
-            self._sequential_index %= len(playlist)
-            path = playlist[self._sequential_index]
-            self._sequential_index += 1
+        self._app.settings.per_monitor = assignments
 
-        # 1. Update local state
-        for mon in self._app.monitors:
-            self._app.settings.per_monitor[mon.connector] = path
-            
         # 2. SAVE to disk
-        self._app.config.save(self._app.settings) 
+        self._app.config.save(self._app.settings)
 
-        # 3. WAKE UP THE DAEMON
-        if self._app._daemon.available:
-            self._app._daemon.reload_config()
-            self._app._daemon.set_wallpaper(path) # Push the order directly
-
-        # 4. Apply visually
+        # 3. Apply visually
         threading.Thread(
             target=self._apply_composite_async,
-            args=(path, self._app.current_mode, self._app.apply_to_lockscreen, [m.connector for m in self._app.monitors]),
+            args=(assignments, self._app.current_mode, self._app.apply_to_lockscreen),
             daemon=True
         ).start()
 
         return True
 
     def _apply_composite_async(
-        self, path: str, mode: str, lock: bool, target_monitors: list
+        self, assignments: dict[str, str], mode: str, lock: bool
     ) -> None:
         """Applies the multi-monitor composite in a separate thread (outside UI thread)."""
-        assignments = {}
+        final_assignments = {}
         for mon in self._app.monitors:
-            if mon.connector in target_monitors:
-                assignments[mon.connector] = path
-            else:
-                # Keep current background on other screens
-                current = self._app.settings.per_monitor.get(mon.connector, path)
-                assignments[mon.connector] = current
+            current = assignments.get(mon.connector) or self._app.settings.per_monitor.get(mon.connector)
+            if current:
+                final_assignments[mon.connector] = current
         results = self._app.backend.apply_per_monitor(
-            assignments, mode, lock,
+            final_assignments, mode, lock,
             monitors=self._app.monitors
         )
         ok = any(results.values())
         if ok:
-            GLib.idle_add(self._app._status, f"⏱ Slideshow: {Path(path).name}")
-            GLib.idle_add(self._app._set_active_wallpapers, [path])
-            GLib.idle_add(self._app._update_preview, path)
+            sample = next(iter(final_assignments.values()), "")
+            if sample:
+                GLib.idle_add(self._app._status, f"Slideshow: {Path(sample).name}")
+                GLib.idle_add(self._app._update_preview, sample)
+            GLib.idle_add(self._app._set_active_wallpapers, list(set(final_assignments.values())))
         else:
-            logger.error("Slideshow composite apply failed: %s", path)
+            logger.error("Slideshow composite apply failed: %s", final_assignments)

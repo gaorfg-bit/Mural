@@ -68,20 +68,26 @@ sys.excepthook = _log_uncaught_exception
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = 268_435_456
 
-APP_VERSION = "1.1.2-2"
+APP_VERSION = "1.2.1"
 
 WHATS_NEW = {
+    "1.2.1": [
+        ("", "Per-monitor slideshow favorites fixed", "Automatic slideshow now strictly keeps separate favorite lists for each monitor."),
+        ("", "No more cross-screen reset", "Resolved a regression where both screens could fall back to the same image after a short delay."),
+        ("", "Launcher fixed", "Desktop launcher now uses an absolute executable path and starts correctly without terminal."),
+        ("", "App icon fixed", "Icon installation is improved with both SVG and PNG entries for reliable display in GNOME."),
+    ],
     "1.1.1": [
-        ("🖼️", "Better thumbnails", "Thumbnails are now sharper and larger. Clear cache once to regenerate them."),
-        ("⌨️", "Keyboard shortcuts", "Press Enter to apply the selected wallpaper. Press Space for a fullscreen preview."),
-        ("🖱️", "Sort from right-click", "Right-click any thumbnail to sort the gallery by name or by date."),
-        ("📌", "Pinnable sidebar", "Click the sidebar button to pin it open permanently. Hover still works when unpinned."),
-        ("🧹", "Memory improvements", "Texture cache is now cleared when switching folders, reducing RAM usage."),
+        ("", "Better thumbnails", "Thumbnails are now sharper and larger. Clear cache once to regenerate them."),
+        ("", "Keyboard shortcuts", "Press Enter to apply the selected wallpaper. Press Space for a fullscreen preview."),
+        ("", "Sort from right-click", "Right-click any thumbnail to sort the gallery by name or by date."),
+        ("", "Pinnable sidebar", "Click the sidebar button to pin it open permanently. Hover still works when unpinned."),
+        ("", "Memory improvements", "Texture cache is now cleared when switching folders, reducing RAM usage."),
     ],
     "1.1": [
-        ("🖥️", "Independent monitors", "The \"Same image on all\" option is now unchecked by default. Each monitor keeps its own wallpaper independently."),
-        ("🔒", "No more overwriting", "Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers."),
-        ("🔗", "Dock icon fixed", "Mural now shows its proper icon in the taskbar instead of the generic terminal script icon."),
+        ("", "Independent monitors", "The \"Same image on all\" option is now unchecked by default. Each monitor keeps its own wallpaper independently."),
+        ("", "No more overwriting", "Changing the wallpaper on one monitor no longer overwrites the other monitors' existing wallpapers."),
+        ("", "Dock icon fixed", "Mural now shows its proper icon in the taskbar instead of the generic terminal script icon."),
     ]
 }
 
@@ -173,9 +179,12 @@ class MuralWindow(Adw.ApplicationWindow):
         if self.settings.last_seen_version != APP_VERSION:
             GLib.timeout_add(800, self._show_whats_new)
         if self._daemon.available:
-            logger.info("Slideshow delegated to daemon")
-            # self._sync_ui_from_daemon()
-        elif self.settings.slideshow_enabled:
+            # Keep daemon available for direct wallpaper calls,
+            # but force slideshow scheduling from the app for proper
+            # independent per-monitor behavior.
+            self._daemon.set_slideshow_enabled(False)
+            logger.info("Daemon detected; slideshow handled by app")
+        if self.settings.slideshow_enabled:
             self.slideshow.start()
 
     def _build_ui(self):
@@ -213,7 +222,7 @@ class MuralWindow(Adw.ApplicationWindow):
         app_menu.append(_("Refresh gallery"), "win.refresh")
         app_menu.append(_("Clear cache"), "win.clear_cache")
         _sep = Gio.Menu()
-        _sep.append("🆕 What's new", "win.whats_new")
+        _sep.append("What's new", "win.whats_new")
         _sep.append(_("About Mural"), "win.about")
         app_menu.append_section(None, _sep)
         menu_btn = Gtk.MenuButton()
@@ -429,7 +438,7 @@ class MuralWindow(Adw.ApplicationWindow):
             self.monitor_btns = []
             first_mb = None
             for i, mon in enumerate(self.monitors):
-                mlbl = f"{_('Monitor')} {i+1}" + (" \u2605" if mon.primary else "")
+                mlbl = f"{_('Monitor')} {i+1}" + (" (primary)" if mon.primary else "")
                 mb = Gtk.ToggleButton(label=mlbl)
                 mb.set_size_request(80, 36)
                 if i == 0:
@@ -550,10 +559,21 @@ class MuralWindow(Adw.ApplicationWindow):
         self.lbl_slideshow_count.set_margin_start(4)
         self._update_slideshow_count_label()
         b_ss.append(self.lbl_slideshow_count)
-        btn_next = Gtk.Button(label=_("\u23ed  Next image now"))
+        btn_next = Gtk.Button(label=_("Next image now"))
         btn_next.add_css_class("flat")
         btn_next.connect("clicked", lambda *_: self.slideshow.next())
         b_ss.append(btn_next)
+
+        bulk_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        btn_add_folder = Gtk.Button(label=_("Add current folder to slideshow"))
+        btn_add_folder.connect("clicked", self._on_add_current_folder_to_slideshow)
+        btn_remove_folder = Gtk.Button(label=_("Remove current folder from slideshow"))
+        btn_remove_folder.add_css_class("flat")
+        btn_remove_folder.connect("clicked", self._on_remove_current_folder_from_slideshow)
+        bulk_box.append(btn_add_folder)
+        bulk_box.append(btn_remove_folder)
+        b_ss.append(bulk_box)
+
         p_ss.set_child(b_ss)
         self._tab_stack.add_named(p_ss, "slideshow")
 
@@ -570,12 +590,12 @@ class MuralWindow(Adw.ApplicationWindow):
         self.row_current_folder.set_title_lines(1)
         self.row_current_folder.set_subtitle_lines(3) # Allows path to be on multiple lines if needed
 
-        btn_bm = Gtk.Button()
-        btn_bm.set_icon_name("bookmark-new-symbolic")
-        btn_bm.set_valign(Gtk.Align.CENTER)
-        btn_bm.add_css_class("flat") # Removes the big gray background from the button
-        btn_bm.set_tooltip_text(_("Add to bookmarks"))
-        btn_bm.connect("clicked", self._on_add_bookmark)
+        self.btn_bookmark_toggle = Gtk.Button()
+        self.btn_bookmark_toggle.set_icon_name("bookmark-new-symbolic")
+        self.btn_bookmark_toggle.set_valign(Gtk.Align.CENTER)
+        self.btn_bookmark_toggle.add_css_class("flat") # Removes the big gray background from the button
+        self.btn_bookmark_toggle.set_tooltip_text(_("Add to bookmarks"))
+        self.btn_bookmark_toggle.connect("clicked", self._on_toggle_bookmark)
 
         self.btn_bookmarks = Gtk.MenuButton()
         self.btn_bookmarks.set_icon_name("user-bookmarks-symbolic")
@@ -584,7 +604,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.btn_bookmarks.set_tooltip_text(_("My bookmarks"))
         self._rebuild_bookmarks_menu()
 
-        self.row_current_folder.add_suffix(btn_bm)
+        self.row_current_folder.add_suffix(self.btn_bookmark_toggle)
         self.row_current_folder.add_suffix(self.btn_bookmarks)
         g_cur.add(self.row_current_folder)
         b_fold.append(g_cur)
@@ -717,8 +737,8 @@ class MuralWindow(Adw.ApplicationWindow):
         self.btn_avif_convert.set_sensitive(True)
         self.btn_avif_cancel.set_visible(False)
         self._avif_progress_bar.set_fraction(1.0)
-        self._avif_progress_label.set_text(f"✓ {converted}/{total} " + _("images converted"))
-        self._status(f"✓ AVIF: {converted}/{total} " + _("images converted"))
+        self._avif_progress_label.set_text(f"{converted}/{total} " + _("images converted"))
+        self._status(f"AVIF: {converted}/{total} " + _("images converted"))
 
     def _on_avif_purge(self, *_ignored) -> None:
         removed = self.avif_converter.purge_folder(self.folder)
@@ -797,8 +817,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._register_action("thumb_set", self._on_thumb_set, None)
         self._register_action("thumb_reveal", self._on_thumb_reveal, None)
         self._register_action("thumb_copy_path", self._on_thumb_copy_path, None)
-        self._register_action("thumb_slideshow_add", self._on_thumb_slideshow_add, None)
-        self._register_action("thumb_slideshow_remove", self._on_thumb_slideshow_remove, None)
+        self._register_action("thumb_slideshow_toggle", self._on_thumb_slideshow_toggle, "<Primary>D")
         self._register_action("thumb_delete_disk", self._on_thumb_delete_disk, None)
         self._register_action("import", self._menu_import, "<Primary>O")
         self._register_action("remove", self._menu_remove, "Delete")
@@ -840,19 +859,18 @@ class MuralWindow(Adw.ApplicationWindow):
 
         # Sort section
         sec_sort = Gio.Menu()
-        sec_sort.append("↑ " + _("Sort by name"), "win.sort_by_name")
-        sec_sort.append("🕐 " + _("Sort by date"), "win.sort_by_date")
+        sec_sort.append(_("Sort by name"), "win.sort_by_name")
+        sec_sort.append(_("Sort by date"), "win.sort_by_date")
         menu.append_section(None, sec_sort)
 
         # Manager section (like "Remove from list")
         sec_slideshow = Gio.Menu()
-        sec_slideshow.append("⭐ " + _("Add to slideshow"), "win.thumb_slideshow_add")
-        sec_slideshow.append("❌ " + _("Remove from slideshow"), "win.thumb_slideshow_remove")
+        sec_slideshow.append(_("Toggle favorite"), "win.thumb_slideshow_toggle")
         menu.append_section(None, sec_slideshow)
         
         # Hard drive section (like "Delete from list AND disk")
         sec_danger = Gio.Menu()
-        sec_danger.append("🗑️ " + _("Delete from disk"), "win.thumb_delete_disk")
+        sec_danger.append(_("Delete from disk"), "win.thumb_delete_disk")
         menu.append_section(None, sec_danger)
         
         self.thumb_menu = Gtk.PopoverMenu.new_from_model(menu)
@@ -873,7 +891,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
     def _status(self, msg: str):
         self.status_label.set_text(msg)
-        if msg and msg[0] in ("✓", "✗", "⚠", "⏱") and hasattr(self, "_toast_overlay"):
+        if msg and hasattr(self, "_toast_overlay"):
             toast = Adw.Toast.new(msg)
             toast.set_timeout(3)
             self._toast_overlay.add_toast(toast)
@@ -1037,10 +1055,13 @@ class MuralWindow(Adw.ApplicationWindow):
     def _on_slideshow_toggle(self, switch, _param) -> None:
         enabled = switch.get_active()
         self.settings.slideshow_enabled = enabled
+        # Keep daemon slideshow disabled so auto mode remains app-driven.
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self._daemon.set_slideshow_enabled(False)
         self._schedule_save()
         if enabled:
             self.slideshow.start()
-            self._status("⏱ " + _("Slideshow enabled"))
+            self._status(_("Slideshow enabled"))
         else:
             self.slideshow.stop()
             self._status(_("Slideshow disabled"))
@@ -1097,14 +1118,14 @@ class MuralWindow(Adw.ApplicationWindow):
         if getattr(self, "_daemon", None) and self._daemon.available:
             ok = self._daemon.set_wallpaper(path)
             if not ok:
-                self._status("✗ " + _("Daemon failed — local fallback"))
+                self._status(_("Daemon failed — local fallback"))
                 ok = self.backend.apply_single(path, mode, lock)
         else:
             ok = self.backend.apply_single(path, mode, lock)
         if ok:
-            self._status(f"✓ {_('Applied')}: {Path(path).name} ({mode})")
+            self._status(f"{_('Applied')}: {Path(path).name} ({mode})")
         else:
-            self._status("✗ " + _("Application error"))
+            self._status(_("Application error"))
 
     def _on_thumb_reveal(self, action, param):
         path = self._context_path
@@ -1114,7 +1135,7 @@ class MuralWindow(Adw.ApplicationWindow):
         try:
             Gio.AppInfo.launch_default_for_uri(uri, None)
         except Exception:
-            self._status("✗ " + _("Cannot open"))
+            self._status(_("Cannot open"))
 
     def _on_thumb_copy_path(self, action, param):
         path = self._context_path
@@ -1127,27 +1148,67 @@ class MuralWindow(Adw.ApplicationWindow):
                 clipboard.set_text(path)
                 self._status(_("Path copied"))
         except Exception:
-            self._status("✗ " + _("Copy failed"))
+            self._status(_("Copy failed"))
 
-    def _on_thumb_slideshow_add(self, action, param) -> None:
+    def _on_thumb_slideshow_toggle(self, action, param) -> None:
         path = self._context_path
         if not path:
             return
-        self.settings.add_to_slideshow(path)
-        self._schedule_save()
-        self._refresh_active_indicators()
-        self._update_slideshow_count_label()
-        self._status(f"✓ {_('Added to slideshow')}: {Path(path).name}")
 
-    def _on_thumb_slideshow_remove(self, action, param) -> None:
-        path = self._context_path
-        if not path:
-            return
-        self.settings.remove_from_slideshow(path)
+        connector = self.monitors[self.current_monitor].connector if self.monitors else None
+
+        if self.settings.is_in_slideshow(path, connector):
+            self.settings.remove_from_slideshow(path, connector)
+            msg = f"{_('Removed from slideshow')}: {Path(path).name}"
+        else:
+            self.settings.add_to_slideshow(path, connector)
+            msg = f"{_('Added to slideshow')}: {Path(path).name}"
+
         self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
-        self._status(f"{_('Removed from slideshow')}: {Path(path).name}")
+        self._status(msg)
+
+    def _on_add_current_folder_to_slideshow(self, *_ignored) -> None:
+        if not self.folder.exists() or not self.folder.is_dir():
+            self._status(_("Folder not found"))
+            return
+
+        connector = self.monitors[self.current_monitor].connector if self.monitors else None
+        added = 0
+        try:
+            files = sorted(
+                p for p in self.folder.iterdir()
+                if p.is_file() and p.suffix.lower() in Config.VALID_EXT
+            )
+        except Exception as e:
+            self._status(f"{_('Cannot read folder')}: {e}")
+            return
+
+        for p in files:
+            before = len(self.settings.resolve_slideshow_playlist(connector))
+            self.settings.add_to_slideshow(str(p), connector)
+            if len(self.settings.resolve_slideshow_playlist(connector)) > before:
+                added += 1
+
+        self._schedule_save()
+        self._refresh_active_indicators()
+        self._update_slideshow_count_label()
+        self._status(f"{added} {_('images added from folder')}: {self.folder.name}")
+
+    def _on_remove_current_folder_from_slideshow(self, *_ignored) -> None:
+        folder_prefix = str(self.folder)
+        connector = self.monitors[self.current_monitor].connector if self.monitors else None
+        playlist = self.settings.resolve_slideshow_playlist(connector)
+        before = len(playlist)
+        for p in list(playlist):
+            if p.startswith(folder_prefix + os.sep):
+                self.settings.remove_from_slideshow(p, connector)
+        removed = before - len(self.settings.resolve_slideshow_playlist(connector))
+        self._schedule_save()
+        self._refresh_active_indicators()
+        self._update_slideshow_count_label()
+        self._status(f"{removed} {_('images removed from folder')}: {self.folder.name}")
 
     def _on_thumb_delete_disk(self, action, param) -> None:
         path = self._context_path
@@ -1170,10 +1231,11 @@ class MuralWindow(Adw.ApplicationWindow):
             if response == 1: # If user clicks "Delete"
                 try:
                     Path(path).unlink() # Physically delete the file
-                    self._status(f"🗑️ {_('File deleted')}: {Path(path).name}")
+                    self._status(f"{_('File deleted')}: {Path(path).name}")
                     
                     # Clean Mural internal database
-                    self.settings.remove_from_slideshow(path)
+                    connector = self.monitors[self.current_monitor].connector if self.monitors else None
+                    self.settings.remove_from_slideshow(path, connector)
                     for conn, p in list(self.settings.per_monitor.items()):
                         if p == path:
                             del self.settings.per_monitor[conn]
@@ -1182,9 +1244,33 @@ class MuralWindow(Adw.ApplicationWindow):
                     # Reload gallery to remove thumbnail
                     self._load_gallery()
                 except Exception as e:
-                    self._status(f"✗ {_('Deletion error')}: {e}")
+                    self._status(f"{_('Deletion error')}: {e}")
 
         dialog.choose(self, None, _on_response)
+
+    def _is_current_folder_bookmarked(self) -> bool:
+        return str(self.folder) in self.settings.folder_bookmarks
+
+    def _refresh_bookmark_controls(self) -> None:
+        bookmarked = self._is_current_folder_bookmarked()
+        if hasattr(self, "btn_bookmark_toggle"):
+            self.btn_bookmark_toggle.set_icon_name(
+                "starred-symbolic" if bookmarked else "bookmark-new-symbolic"
+            )
+            self.btn_bookmark_toggle.set_tooltip_text(
+                _("Remove from bookmarks") if bookmarked else _("Add to bookmarks")
+            )
+        if hasattr(self, "btn_bookmarks"):
+            count = len(self.settings.folder_bookmarks)
+            self.btn_bookmarks.set_tooltip_text(
+                _("My bookmarks") if count <= 0 else _("My bookmarks") + f" ({count})"
+            )
+
+    def _on_toggle_bookmark(self, *_ignored) -> None:
+        if self._is_current_folder_bookmarked():
+            self._on_remove_bookmark()
+        else:
+            self._on_add_bookmark()
 
     def _on_add_bookmark(self, *_ignored) -> None:
         folder = str(self.folder)
@@ -1192,7 +1278,7 @@ class MuralWindow(Adw.ApplicationWindow):
             self.settings.folder_bookmarks.append(folder)
             self._schedule_save()
             self._rebuild_bookmarks_menu()
-            self._status(f"✓ {_('Bookmark added')}: {self.folder.name}")
+            self._status(f"{_('Bookmark added')}: {self.folder.name}")
         else:
             self._status(_("Folder already in bookmarks"))
 
@@ -1204,14 +1290,47 @@ class MuralWindow(Adw.ApplicationWindow):
                 pass
         self._bookmark_action_names.clear()
 
-        bookmarks = self.settings.folder_bookmarks
+        # Keep bookmarks coherent: existing folders only + unique paths.
+        cleaned_bookmarks: list[str] = []
+        seen: set[str] = set()
+        for saved in self.settings.folder_bookmarks:
+            normalized = str(Path(saved))
+            if normalized in seen:
+                continue
+            if not Path(normalized).exists():
+                continue
+            seen.add(normalized)
+            cleaned_bookmarks.append(normalized)
+        if cleaned_bookmarks != self.settings.folder_bookmarks:
+            self.settings.folder_bookmarks = cleaned_bookmarks
+            self._schedule_save()
+
+        bookmarks = sorted(
+            self.settings.folder_bookmarks,
+            key=lambda p: (Path(p).name.lower(), p.lower()),
+        )
         menu = Gio.Menu()
+
+        # Quick action for the currently open folder
+        try:
+            self.remove_action("bookmark_toggle_current")
+        except Exception:
+            pass
+        toggle_action = Gio.SimpleAction.new("bookmark_toggle_current", None)
+        toggle_action.connect("activate", self._on_toggle_bookmark)
+        self.add_action(toggle_action)
 
         if not bookmarks:
             section = Gio.Menu()
             section.append(_("No bookmarks"), None)
             menu.append_section(None, section)
         else:
+            # Disambiguate duplicate folder names by showing full path when needed.
+            name_counts: Dict[str, int] = {}
+            for path in bookmarks:
+                n = Path(path).name
+                name_counts[n] = name_counts.get(n, 0) + 1
+
             for i, path in enumerate(bookmarks):
                 name = Path(path).name
                 action_id = f"bookmark_{i}"
@@ -1219,27 +1338,24 @@ class MuralWindow(Adw.ApplicationWindow):
                 action.connect("activate", lambda _a, _v, p=path: self._jump_to_folder(p))
                 self.add_action(action)
                 self._bookmark_action_names.append(action_id)
-                menu.append(name, f"win.{action_id}")
+                label = name if name_counts.get(name, 0) <= 1 else f"{name} — {path}"
+                menu.append(label, f"win.{action_id}")
 
-            sep_section = Gio.Menu()
-            sep_section.append(_("Remove current folder"), "win.bookmark_remove_current")
-            menu.append_section(None, sep_section)
-
-        try:
-            self.remove_action("bookmark_remove_current")
-        except Exception:
-            pass
-        remove_action = Gio.SimpleAction.new("bookmark_remove_current", None)
-        remove_action.connect("activate", self._on_remove_bookmark)
-        self.add_action(remove_action)
+        section_current = Gio.Menu()
+        if self._is_current_folder_bookmarked():
+            section_current.append(_("Remove current folder"), "win.bookmark_toggle_current")
+        else:
+            section_current.append(_("Add current folder"), "win.bookmark_toggle_current")
+        menu.append_section(None, section_current)
 
         popover = Gtk.PopoverMenu.new_from_model(menu)
         self.btn_bookmarks.set_popover(popover)
+        self._refresh_bookmark_controls()
 
     def _jump_to_folder(self, path: str) -> None:
         folder = Path(path)
         if not folder.exists():
-            self._status(f"✗ {_('Folder not found')}: {folder.name}")
+            self._status(f"{_('Folder not found')}: {folder.name}")
             return
         self._set_selected_folder(Gio.File.new_for_path(str(folder)))
 
@@ -1264,7 +1380,7 @@ class MuralWindow(Adw.ApplicationWindow):
                 self.settings.monitor_folders[connector] = path
                 self._schedule_save()
                 row.set_subtitle(path[-40:])
-                self._status(f"✓ {_('Folder assigned to monitor')} {connector}")
+                self._status(f"{_('Folder assigned to monitor')} {connector}")
         if hasattr(Gtk, "FileDialog"):
             dialog = Gtk.FileDialog()
             dialog.set_title(_("Choose folder for this monitor"))
@@ -1284,7 +1400,7 @@ class MuralWindow(Adw.ApplicationWindow):
     def _on_load_monitor_folder(self, btn, connector: str) -> None:
         path = self.settings.monitor_folders.get(connector, "")
         if not path or not Path(path).exists():
-            self._status("✗ " + _("No folder assigned to this monitor — click the folder icon first"))
+            self._status(_("No folder assigned to this monitor — click the folder icon first"))
             return
         for i, mon in enumerate(self.monitors):
             if mon.connector == connector:
@@ -1306,14 +1422,15 @@ class MuralWindow(Adw.ApplicationWindow):
                 self.settings.monitor_folders[connector] = path
                 self._schedule_save()
                 row.set_subtitle(path[-40:])
-                self._status(f"✓ {_('Folder assigned to monitor')} {connector}")
+                self._status(f"{_('Folder assigned to monitor')} {connector}")
         dialog.destroy()
         self._file_dialog = None
 
     def _update_slideshow_count_label(self) -> None:
         if not hasattr(self, "lbl_slideshow_count"):
             return
-        playlist = self.settings.resolve_slideshow_playlist()
+        connector = self.monitors[self.current_monitor].connector if self.monitors else None
+        playlist = self.settings.resolve_slideshow_playlist(connector)
         n = len(playlist)
         if n > 0:
             self.lbl_slideshow_count.set_text(_("{} image{} in list").format(n, "s" if n > 1 else ""))
@@ -1602,6 +1719,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.settings.folder = str(self.folder)
         self._schedule_save()
         self.row_current_folder.set_subtitle(str(self.folder))
+        self._rebuild_bookmarks_menu()
         self._texture_cache.clear()
         self._load_gallery()
 
@@ -1690,7 +1808,7 @@ class MuralWindow(Adw.ApplicationWindow):
                 or not Path(self.settings.per_monitor[mon.connector]).exists()
             ]
             if missing:
-                self._status(f"⚠ {_('Missing images:')} {', '.join(missing)}")
+                self._status(f"{_('Missing images:')} {', '.join(missing)}")
                 return
 
         self.btn_apply.set_sensitive(False)
@@ -1733,15 +1851,15 @@ class MuralWindow(Adw.ApplicationWindow):
                 ok = ok_count == total
                 active_paths = list(assignments.values())
                 status_msg = (
-                    f"✓ {_('Applied on')} {ok_count}/{total} {_('monitors')}"
-                    if ok else f"⚠ {_('Partial canvas:')} {ok_count}/{total} {_('monitors')}"
+                    f"{_('Applied on')} {ok_count}/{total} {_('monitors')}"
+                    if ok else f"{_('Partial canvas:')} {ok_count}/{total} {_('monitors')}"
                 )
             else:
                 # If user physically has only one screen
                 if getattr(self, "_daemon", None) and self._daemon.available:
                     ok = self._daemon.set_wallpaper(image)
                     if not ok:
-                        GLib.idle_add(self._status, "✗ " + _("daemon — local fallback"))
+                        GLib.idle_add(self._status, _("daemon — local fallback"))
                         ok = self.backend.apply_single(image, mode=mode, lock=lock)
                 else:
                     ok = self.backend.apply_single(image, mode=mode, lock=lock)
@@ -1749,9 +1867,9 @@ class MuralWindow(Adw.ApplicationWindow):
                     active_paths = [image]
                     for mon in monitors_snapshot:
                         self.settings.per_monitor[mon.connector] = image
-                    status_msg = f"✓ {_('Applied')}: {Path(image).name}"
+                    status_msg = f"{_('Applied')}: {Path(image).name}"
                 else:
-                    status_msg = "✗ " + _("Application failed")
+                    status_msg = _("Application failed")
 
             GLib.idle_add(self._on_apply_done, ok, image, active_paths, mode, lock, status_msg)
 
@@ -1763,7 +1881,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._status(status_msg)
         if ok:
             self._set_active_wallpapers(active_paths)
-            self.btn_apply.set_label(_("✓ Applied!"))
+            self.btn_apply.set_label(_("Applied"))
             GLib.timeout_add(
                 2500,
                 lambda: (self._update_apply_btn_subtitle(), False)[-1]
@@ -1923,7 +2041,8 @@ class MuralWindow(Adw.ApplicationWindow):
         slideshow_indicator.set_halign(Gtk.Align.START)
         slideshow_indicator.set_margin_bottom(4)
         slideshow_indicator.set_margin_start(4)
-        slideshow_indicator.set_visible(self.settings.is_in_slideshow(str(fpath)))
+        connector = self.monitors[self.current_monitor].connector if self.monitors else None
+        slideshow_indicator.set_visible(self.settings.is_in_slideshow(str(fpath), connector))
 
         overlay = Gtk.Overlay()
         overlay.set_child(picture)
@@ -1946,7 +2065,7 @@ class MuralWindow(Adw.ApplicationWindow):
 
     def _gallery_done(self, total):
         self._set_progress_visibility(False)
-        self._status(f"✓ {total} " + _("images") + f" — {self.folder.name}")
+        self._status(f"{total} " + _("images") + f" — {self.folder.name}")
         child = self.flowbox.get_first_child()
         if child:
             self.flowbox.select_child(child)
@@ -1975,8 +2094,9 @@ class MuralWindow(Adw.ApplicationWindow):
             else:
                 box.remove_css_class("thumb-active")
             indicator.set_visible(active)
+            connector = self.monitors[self.current_monitor].connector if self.monitors else None
             slideshow_indicator.set_visible(
-                self.settings.is_in_slideshow(path)
+                self.settings.is_in_slideshow(path, connector)
             )
 
     def _on_monitors_changed(self, list_model, position, removed, added) -> None:
@@ -2046,7 +2166,7 @@ class MuralApplication(Adw.Application):
         except Exception as e:
             # This will give us the real reason for the crash
             print("\n" + "!"*50)
-            print("💥 FATAL CRASH IN INTERFACE:")
+            print("FATAL CRASH IN INTERFACE:")
             traceback.print_exc()
             print("!"*50 + "\n")
             self.quit()

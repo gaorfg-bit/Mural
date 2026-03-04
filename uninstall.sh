@@ -16,6 +16,7 @@ rm -f "$HOME/.local/share/applications/io.github.gaorfgbit.Mural.desktop"
 
 # Icons (all possible locations)
 rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.gaorfgbit.Mural.svg"
+rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/io.github.gaorfgbit.Mural.png"
 
 # Force GNOME to remove the icon from the app list immediately
 update-desktop-database "$HOME/.local/share/applications"

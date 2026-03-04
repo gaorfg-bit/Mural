@@ -193,6 +193,7 @@ class MuralDaemon:
         self._current_wallpaper: str = ""
         self._slideshow_timeout_id: Optional[int] = None
         self._sequential_index: int = 0
+        self._sequential_index_per_monitor: dict[str, int] = {}
 
         self._reload_config()
         self._start_slideshow_if_needed()
@@ -202,8 +203,12 @@ class MuralDaemon:
         logger.info("Config loaded. Slideshow: %s, interval: %dmin",
                     self._cfg.get("slideshow_enabled"), self._cfg.get("slideshow_interval", 10))
 
-    def _get_playlist(self) -> List[str]:
-        images = self._cfg.get("slideshow_images", [])
+    def _get_playlist(self, connector: Optional[str] = None) -> List[str]:
+        if connector:
+            per_monitor = self._cfg.get("slideshow_images_per_monitor", {}) or {}
+            images = per_monitor.get(connector, [])
+        else:
+            images = self._cfg.get("slideshow_images", [])
         return [p for p in images if Path(p).exists()]
 
     def _start_slideshow_if_needed(self):
@@ -222,29 +227,42 @@ class MuralDaemon:
             logger.info("Slideshow stopped")
 
     def _tick(self) -> bool:
-        playlist = self._get_playlist()
-        if not playlist:
-            logger.warning("Slideshow tick: empty playlist")
+        monitors = detect_monitors_fallback()
+        target_connectors = self._cfg.get("slideshow_monitors") or [m["connector"] for m in monitors]
+        per_monitor = dict(self._cfg.get("per_monitor", {}))
+        updated = False
+
+        for connector in target_connectors:
+            playlist = self._get_playlist(connector)
+            if not playlist:
+                continue
+            if self._cfg.get("slideshow_random", True):
+                chosen = random.choice(playlist)
+            else:
+                idx = self._sequential_index_per_monitor.get(connector, 0) % len(playlist)
+                chosen = playlist[idx]
+                self._sequential_index_per_monitor[connector] = idx + 1
+            per_monitor[connector] = chosen
+            updated = True
+
+        if not updated:
+            logger.warning("Slideshow tick: no per-monitor playlist configured")
             return True
 
-        if self._cfg.get("slideshow_random", True):
-            path = random.choice(playlist)
-        else:
-            self._sequential_index %= len(playlist)
-            path = playlist[self._sequential_index]
-            self._sequential_index += 1
-
-        self._apply(path)
+        self._cfg["per_monitor"] = per_monitor
+        save_config(self._cfg)
+        apply_wallpaper_composite(next(iter(per_monitor.values()), ""), self._cfg)
         return True
 
     def _apply(self, path: str):
         self._current_wallpaper = path
-        # Update per_monitor in config
-        monitors = detect_monitors_fallback()
-        per_monitor = self._cfg.get("per_monitor", {})
-        for mon in monitors:
-            per_monitor[mon["connector"]] = path
-        self._cfg["per_monitor"] = per_monitor
+        # Keep existing per-monitor assignments when available.
+        per_monitor = dict(self._cfg.get("per_monitor", {}))
+        if not per_monitor:
+            monitors = detect_monitors_fallback()
+            for mon in monitors:
+                per_monitor[mon["connector"]] = path
+            self._cfg["per_monitor"] = per_monitor
         save_config(self._cfg)
         apply_wallpaper_composite(path, self._cfg)
 

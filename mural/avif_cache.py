@@ -84,7 +84,7 @@ def cache_dir_for(folder: Path) -> Path:
 
 
 def avif_path_for(original: Path) -> Path:
-    """ex: /img/foo.jpg → /img/.mural_cache/foo.avif"""
+    """Example: /img/foo.jpg to /img/.mural_cache/foo.avif"""
     return cache_dir_for(original.parent) / (original.stem + ".avif")
 
 
@@ -100,7 +100,7 @@ def get_cached_avif(original: str) -> Optional[Path]:
     try:
         if avif.stat().st_mtime >= orig.stat().st_mtime:
             return avif
-        avif.unlink(missing_ok=True)  # original newer → invalid
+        avif.unlink(missing_ok=True)  # original newer: invalid cache
     except Exception:
         pass
     return None
@@ -246,7 +246,7 @@ class FolderConverter:
             orig_size = original.stat().st_size
             avif_size = dest.stat().st_size
             ratio = (1 - avif_size / orig_size) * 100 if orig_size else 0
-            logger.debug("✓ %s → .avif (−%.0f%%)", original.name, ratio)
+            logger.debug("Converted %s to .avif (%.0f%% smaller)", original.name, ratio)
             return True
 
         except subprocess.TimeoutExpired:

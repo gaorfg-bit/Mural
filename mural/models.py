@@ -32,6 +32,7 @@ class WallpaperSettings:
     slideshow_random: bool = True
     slideshow_folders: List[str] = field(default_factory=list)
     slideshow_images: List[str] = field(default_factory=list)
+    slideshow_images_per_monitor: Dict[str, List[str]] = field(default_factory=dict)
     slideshow_excluded: List[str] = field(default_factory=list)
     slideshow_monitors: List[str] = field(default_factory=list)
     folder_bookmarks: List[str] = field(default_factory=list)
@@ -48,27 +49,49 @@ class WallpaperSettings:
     def from_dict(cls, d):
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
-    def resolve_slideshow_playlist(self) -> List[str]:
+    def _clean_existing_paths(self, paths: List[str]) -> List[str]:
+        cleaned: List[str] = []
+        seen: set[str] = set()
+        for img in paths:
+            if img in seen:
+                continue
+            if Path(img).exists():
+                seen.add(img)
+                cleaned.append(img)
+        return cleaned
+
+    def resolve_slideshow_playlist(self, connector: Optional[str] = None) -> List[str]:
         """
         Returns the final list of images for the slideshow.
-        100% Manual Mode: Only images added one by one are played.
+        100% Manual Mode: only images added manually are played.
+        If connector is provided, only that monitor's dedicated list is used.
         """
-        result: set[str] = set()
-        for img in self.slideshow_images:
-            if Path(img).exists():
-                result.add(img)
-        return sorted(result)
+        if connector:
+            return self._clean_existing_paths(self.slideshow_images_per_monitor.get(connector, []))
+        return self._clean_existing_paths(self.slideshow_images)
 
-    def is_in_slideshow(self, path: str) -> bool:
+    def is_in_slideshow(self, path: str, connector: Optional[str] = None) -> bool:
         """Returns True only if the image was added manually."""
+        if connector and connector in self.slideshow_images_per_monitor:
+            return path in self.slideshow_images_per_monitor.get(connector, [])
         return path in self.slideshow_images
 
-    def add_to_slideshow(self, path: str) -> None:
+    def add_to_slideshow(self, path: str, connector: Optional[str] = None) -> None:
         """Adds an image to the playlist."""
+        if connector:
+            bucket = self.slideshow_images_per_monitor.setdefault(connector, [])
+            if path not in bucket:
+                bucket.append(path)
+            return
         if path not in self.slideshow_images:
             self.slideshow_images.append(path)
 
-    def remove_from_slideshow(self, path: str) -> None:
+    def remove_from_slideshow(self, path: str, connector: Optional[str] = None) -> None:
         """Removes an image from the playlist."""
+        if connector and connector in self.slideshow_images_per_monitor:
+            bucket = self.slideshow_images_per_monitor.get(connector, [])
+            if path in bucket:
+                bucket.remove(path)
+            return
         if path in self.slideshow_images:
             self.slideshow_images.remove(path)
