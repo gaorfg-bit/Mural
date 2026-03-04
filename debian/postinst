@@ -1,7 +1,0 @@
-#!/bin/sh
-set -e
-if [ "$1" = "configure" ]; then
-    gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
-    update-desktop-database /usr/share/applications 2>/dev/null || true
-    systemctl --user enable mural.service 2>/dev/null || true
-fi

@@ -1,5 +1,0 @@
-mural/ usr/share/mural/
-scripts/mural-launcher usr/bin/
-io.github.gaorfgbit.Mural.desktop usr/share/applications/
-mural/data/icons/io.github.gaorfgbit.Mural.svg usr/share/icons/hicolor/scalable/apps/
-scripts/mural.service usr/lib/systemd/user/
