@@ -68,9 +68,18 @@ sys.excepthook = _log_uncaught_exception
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = 268_435_456
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 WHATS_NEW = {
+    "1.2.2": [
+        ("", "Mural 1.2.2 — Fixes & Improvements", "Release focused on stability, synchronization, thread safety, performance and security hardening."),
+        ("", "Configuration safety", "Fixed concurrent write corruption risks, added atomic JSON writes and lock-based config access, with automatic .corrupt backup recovery."),
+        ("", "Daemon & IPC hardening", "Improved daemon/UI synchronization, added safer D-Bus config update path, caller authorization checks, and request rate-limit protection."),
+        ("", "Thread safety & UI integrity", "Ensured GTK mutations stay on main thread and reduced race conditions in shared image/cache update paths."),
+        ("", "Performance & memory", "LRU texture cache, preview generation cancellation, and thumbnail worker parallelism limits reduce RAM spikes and stale rendering."),
+        ("", "Gallery & preview quality", "Flow-based gallery restored, aspect-ratio-safe scaling improved, and preview rendering constraints refined for large images."),
+        ("", "Short changelog", "Fix config corruption • Improve daemon/UI sync • Add LRU cache • Improve UI thread safety • Harden D-Bus checks • Reduce memory usage."),
+    ],
     "1.2.1": [
         ("", "Per-monitor slideshow favorites fixed", "Automatic slideshow now strictly keeps separate favorite lists for each monitor."),
         ("", "No more cross-screen reset", "Resolved a regression where both screens could fall back to the same image after a short delay."),
