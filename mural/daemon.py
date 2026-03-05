@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -93,6 +94,19 @@ class MuralDaemonProxy:
 
     def reload_config(self):
         self._call("ReloadConfig", None)
+
+    def set_config_json(self, config_dict: dict) -> bool:
+        try:
+            payload = json.dumps(config_dict, ensure_ascii=False)
+        except Exception:
+            return False
+        res = self._call("SetConfigJson", GLib.Variant("(s)", (payload,)))
+        if res is None:
+            return False
+        try:
+            return bool(res.unpack()[0])
+        except Exception:
+            return False
 
     def get_current_wallpaper(self) -> str:
         res = self._call("GetCurrentWallpaper", None)

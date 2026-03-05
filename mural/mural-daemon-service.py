@@ -10,10 +10,16 @@ import logging
 import os
 import random
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from gi.repository import GLib, Gio
+
+try:
+    from mural.io_utils import atomic_save_json, ensure_private_dir, load_json, locked_file
+except Exception:
+    from io_utils import atomic_save_json, ensure_private_dir, load_json, locked_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,18 +34,28 @@ CONFIG_FILE = Path.home() / ".config" / "mural" / "settings.json"
 CACHE_DIR = Path(GLib.get_user_cache_dir()) / "mural"
 
 def load_config() -> dict:
+    ensure_private_dir(CONFIG_FILE.parent)
     try:
         if CONFIG_FILE.exists():
-            with open(CONFIG_FILE) as f:
-                return json.load(f)
+            with locked_file(CONFIG_FILE):
+                return load_json(CONFIG_FILE)
+    except json.JSONDecodeError:
+        logger.warning("Invalid daemon JSON config detected, using defaults")
+        try:
+            corrupt = CONFIG_FILE.with_suffix(".json.corrupt")
+            CONFIG_FILE.replace(corrupt)
+            logger.warning("Corrupt daemon config moved to: %s", corrupt)
+        except Exception:
+            pass
     except Exception as e:
         logger.error("Failed to load config: %s", e)
     return {}
 
 def save_config(cfg: dict):
+    ensure_private_dir(CONFIG_FILE.parent)
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(cfg, f, indent=2)
+        with locked_file(CONFIG_FILE):
+            atomic_save_json(CONFIG_FILE, cfg, mode=0o600)
     except Exception as e:
         logger.error("Failed to save config: %s", e)
 
@@ -178,6 +194,10 @@ DBUS_XML = """
     <method name="SetSlideshowEnabled">
       <arg type="b" direction="in" name="enabled"/>
     </method>
+    <method name="SetConfigJson">
+      <arg type="s" direction="in" name="json"/>
+      <arg type="b" direction="out"/>
+    </method>
     <method name="ReloadConfig"/>
   </interface>
 </node>
@@ -194,9 +214,37 @@ class MuralDaemon:
         self._slideshow_timeout_id: Optional[int] = None
         self._sequential_index: int = 0
         self._sequential_index_per_monitor: dict[str, int] = {}
+        self._last_wallpaper_change: float = 0.0
+        self._wallpaper_rate_limit: float = 0.5
 
         self._reload_config()
         self._start_slideshow_if_needed()
+
+    def _get_sender_uid(self, connection: Gio.DBusConnection, sender: str) -> Optional[int]:
+        if not sender:
+            return None
+        try:
+            result = connection.call_sync(
+                "org.freedesktop.DBus",
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "GetConnectionUnixUser",
+                GLib.Variant("(s)", (sender,)),
+                GLib.VariantType("(u)"),
+                Gio.DBusCallFlags.NONE,
+                1000,
+                None,
+            )
+            return int(result.unpack()[0])
+        except Exception as e:
+            logger.warning("Cannot resolve sender uid for %s: %s", sender, e)
+            return None
+
+    def _is_authorized_sender(self, connection: Gio.DBusConnection, sender: str) -> bool:
+        uid = self._get_sender_uid(connection, sender)
+        if uid is None:
+            return False
+        return uid == os.getuid()
 
     def _reload_config(self):
         self._cfg = load_config()
@@ -207,6 +255,10 @@ class MuralDaemon:
         if connector:
             per_monitor = self._cfg.get("slideshow_images_per_monitor", {}) or {}
             images = per_monitor.get(connector, [])
+            # Fallback to global playlist so daemon slideshow keeps running
+            # even when no monitor-specific favorites are configured.
+            if not images:
+                images = self._cfg.get("slideshow_images", [])
         else:
             images = self._cfg.get("slideshow_images", [])
         return [p for p in images if Path(p).exists()]
@@ -266,10 +318,49 @@ class MuralDaemon:
         save_config(self._cfg)
         apply_wallpaper_composite(path, self._cfg)
 
+    def _set_config_json(self, json_str: str) -> bool:
+        try:
+            data = json.loads(json_str)
+            if not isinstance(data, dict):
+                return False
+        except Exception:
+            return False
+
+        old_enabled = bool(self._cfg.get("slideshow_enabled", False))
+        old_interval = int(self._cfg.get("slideshow_interval", 10) or 10)
+
+        save_config(data)
+        self._reload_config()
+
+        new_enabled = bool(self._cfg.get("slideshow_enabled", False))
+        new_interval = int(self._cfg.get("slideshow_interval", 10) or 10)
+
+        if not new_enabled:
+            self._stop_slideshow()
+        else:
+            needs_restart = (
+                self._slideshow_timeout_id is None
+                or (not old_enabled)
+                or (new_interval != old_interval)
+            )
+            if needs_restart:
+                self._stop_slideshow()
+                self._start_slideshow_if_needed()
+
+        return True
+
     # ── D-Bus method handlers ────────────────────────────────────────────────
 
     def handle_method_call(self, connection, sender, path, iface, method, params, invocation):
         try:
+            if not self._is_authorized_sender(connection, sender):
+                logger.warning("Unauthorized D-Bus caller: sender=%s", sender)
+                invocation.return_dbus_error(
+                    "io.github.mural.Error.Unauthorized",
+                    "Unauthorized caller",
+                )
+                return
+
             if method == "GetCurrentWallpaper":
                 invocation.return_value(GLib.Variant("(s)", (self._current_wallpaper,)))
 
@@ -281,7 +372,14 @@ class MuralDaemon:
 
             elif method == "SetWallpaper":
                 path_arg = params.unpack()[0]
-                if os.path.exists(path_arg):
+                now = time.monotonic()
+                if now - self._last_wallpaper_change < self._wallpaper_rate_limit:
+                    invocation.return_value(GLib.Variant("(b)", (False,)))
+                    return
+
+                image_path = Path(path_arg)
+                if image_path.exists() and image_path.is_file():
+                    self._last_wallpaper_change = now
                     self._apply(path_arg)
                     invocation.return_value(GLib.Variant("(b)", (True,)))
                 else:
@@ -306,6 +404,11 @@ class MuralDaemon:
                 else:
                     self._stop_slideshow()
                 invocation.return_value(None)
+
+            elif method == "SetConfigJson":
+                json_arg = params.unpack()[0]
+                ok = self._set_config_json(json_arg)
+                invocation.return_value(GLib.Variant("(b)", (ok,)))
 
             elif method == "ReloadConfig":
                 self._reload_config()

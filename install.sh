@@ -8,13 +8,15 @@ LAUNCHER="mural-launcher"
 TGT="$HOME/.local/share/$APP"
 BIN_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
+DESKTOP_FILE="$APP_DIR/mural.desktop"
+DESKTOP_FILE_LEGACY="$APP_DIR/io.github.gaorfgbit.Mural.desktop"
 ICON_SCALABLE_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 ICON_256_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 echo "Deep cleaning..."
-rm -f "$HOME/.local/share/applications/mural.desktop"
-rm -f "$HOME/.local/share/applications/io.github.gaorfgbit.Mural.desktop"
+rm -f "$DESKTOP_FILE"
+rm -f "$DESKTOP_FILE_LEGACY"
 rm -rf "$TGT"
 
 if [ -d "/usr/share/mural" ] && [ ! -f "/usr/share/mural/mural/main.py" ]; then
@@ -40,7 +42,7 @@ install -m 755 "$DIR/scripts/$LAUNCHER" "$BIN_DIR/$LAUNCHER"
 ln -sf "$BIN_DIR/$LAUNCHER" "$BIN_DIR/$APP"
 
 echo "Creating desktop entry..."
-cat <<EOF > "$APP_DIR/io.github.gaorfgbit.Mural.desktop"
+cat <<EOF > "$DESKTOP_FILE"
 [Desktop Entry]
 Name=Mural
 Comment=Wallpaper Manager
@@ -54,7 +56,8 @@ StartupNotify=true
 StartupWMClass=io.github.gaorfgbit.Mural
 Keywords=wallpaper;background;
 EOF
-chmod +x "$APP_DIR/io.github.gaorfgbit.Mural.desktop"
+chmod 644 "$DESKTOP_FILE"
+ln -sf "mural.desktop" "$DESKTOP_FILE_LEGACY"
 
 echo "Installing daemon..."
 cat <<EOF > "$SYSTEMD_DIR/mural.service"
@@ -81,7 +84,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now mural.service
 
 echo "Refreshing GNOME..."
-update-desktop-database "$APP_DIR"
+update-desktop-database "$APP_DIR" 2>/dev/null || true
 gtk4-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor/" 2>/dev/null || true
 
 echo "Done. Search for 'Mural' in your activities."

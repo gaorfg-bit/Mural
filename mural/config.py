@@ -7,6 +7,12 @@ from pathlib import Path
 from gi.repository import GLib
 
 from mural.models import WallpaperSettings
+from mural.io_utils import (
+    atomic_save_json,
+    ensure_private_dir,
+    load_json,
+    locked_file,
+)
 
 logger = logging.getLogger("wallpaper")
 
@@ -31,9 +37,9 @@ class Config:
     PREVIEW_MIN_HEIGHT = 140
 
     def __init__(self):
-        self.THUMB_DIR.mkdir(parents=True, exist_ok=True)
-        self.AVIF_DIR.mkdir(parents=True, exist_ok=True)
-        self.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self.THUMB_DIR)
+        ensure_private_dir(self.AVIF_DIR)
+        ensure_private_dir(self.CONFIG_FILE.parent)
 
     @staticmethod
     def default_folder() -> Path:
@@ -57,15 +63,24 @@ class Config:
     def load(self) -> WallpaperSettings:
         try:
             if self.CONFIG_FILE.exists():
-                with open(self.CONFIG_FILE) as f:
-                    return WallpaperSettings.from_dict(json.load(f))
+                with locked_file(self.CONFIG_FILE):
+                    return WallpaperSettings.from_dict(load_json(self.CONFIG_FILE))
+        except json.JSONDecodeError:
+            logger.warning("Invalid JSON config detected, using defaults")
+            try:
+                corrupt = self.CONFIG_FILE.with_suffix(".json.corrupt")
+                self.CONFIG_FILE.replace(corrupt)
+                logger.warning("Corrupt config moved to: %s", corrupt)
+            except Exception:
+                pass
         except Exception:
             pass
         return WallpaperSettings(folder=str(self.default_folder()))
 
     def save(self, s: WallpaperSettings):
         try:
-            with open(self.CONFIG_FILE, "w") as f:
-                json.dump(s.to_dict(), f, indent=2)
+            ensure_private_dir(self.CONFIG_FILE.parent)
+            with locked_file(self.CONFIG_FILE):
+                atomic_save_json(self.CONFIG_FILE, s.to_dict(), mode=0o600)
         except Exception as e:
             logger.error("Save error: %s", e)

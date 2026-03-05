@@ -71,7 +71,7 @@ class SlideshowManager:
         self._app.settings.per_monitor = assignments
 
         # 2. SAVE to disk
-        self._app.config.save(self._app.settings)
+        self._app._persist_settings()
 
         # 3. Apply visually
         threading.Thread(

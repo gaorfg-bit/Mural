@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 logger = logging.getLogger("mural.thumbnails")
 
@@ -40,14 +40,20 @@ class Thumbnailer:
                 elif img.mode != "RGB":
                     img = img.convert("RGB")
 
-                ratio = max(tw / img.width, th / img.height)
-                new_w = int(img.width * ratio)
-                new_h = int(img.height * ratio)
-                # LANCZOS: better quality for larger thumbnails
-                thumb = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                left = (new_w - tw) // 2
-                top  = (new_h - th) // 2
-                thumb = thumb.crop((left, top, left + tw, top + th))
+                # Square cover thumbnail with high-quality resampling.
+                # Avoid upscaling tiny images to keep them sharp.
+                if img.width < tw or img.height < th:
+                    thumb = Image.new("RGB", (tw, th), (40, 40, 40))
+                    ox = (tw - img.width) // 2
+                    oy = (th - img.height) // 2
+                    thumb.paste(img, (max(0, ox), max(0, oy)))
+                else:
+                    thumb = ImageOps.fit(
+                        img,
+                        (tw, th),
+                        method=Image.Resampling.LANCZOS,
+                        centering=(0.5, 0.5),
+                    )
                 thumb.save(str(cached), "JPEG", quality=92, optimize=False)
                 # with block releases img and thumb here
             return cached

@@ -179,12 +179,12 @@ class MuralWindow(Adw.ApplicationWindow):
         if self.settings.last_seen_version != APP_VERSION:
             GLib.timeout_add(800, self._show_whats_new)
         if self._daemon.available:
-            # Keep daemon available for direct wallpaper calls,
-            # but force slideshow scheduling from the app for proper
-            # independent per-monitor behavior.
-            self._daemon.set_slideshow_enabled(False)
-            logger.info("Daemon detected; slideshow handled by app")
-        if self.settings.slideshow_enabled:
+            # Daemon is authoritative for slideshow so it keeps running
+            # even when the UI is closed.
+            self._daemon.set_slideshow_enabled(self.settings.slideshow_enabled)
+            self._daemon.reload_config()
+            logger.info("Daemon detected; slideshow handled by daemon")
+        elif self.settings.slideshow_enabled:
             self.slideshow.start()
 
     def _build_ui(self):
@@ -1055,9 +1055,13 @@ class MuralWindow(Adw.ApplicationWindow):
     def _on_slideshow_toggle(self, switch, _param) -> None:
         enabled = switch.get_active()
         self.settings.slideshow_enabled = enabled
-        # Keep daemon slideshow disabled so auto mode remains app-driven.
         if getattr(self, "_daemon", None) and self._daemon.available:
-            self._daemon.set_slideshow_enabled(False)
+            self.config.save(self.settings)
+            self._daemon.set_slideshow_enabled(enabled)
+            self._daemon.reload_config()
+            self.slideshow.stop()
+            self._status(_("Slideshow enabled") if enabled else _("Slideshow disabled"))
+            return
         self._schedule_save()
         if enabled:
             self.slideshow.start()
@@ -1068,12 +1072,20 @@ class MuralWindow(Adw.ApplicationWindow):
 
     def _on_interval_changed(self, spin) -> None:
         self.settings.slideshow_interval = int(spin.get_value())
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+            return
         self._schedule_save()
         if self.slideshow.is_running():
             self.slideshow.start()
 
     def _on_random_toggle(self, switch, _param) -> None:
         self.settings.slideshow_random = switch.get_active()
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+            return
         self._schedule_save()
 
     def _on_slideshow_monitor_toggled(self, chk, connector: str) -> None:
@@ -1082,6 +1094,10 @@ class MuralWindow(Adw.ApplicationWindow):
             self.settings.slideshow_monitors = []
         else:
             self.settings.slideshow_monitors = checked
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+            return
         self._schedule_save()
 
     def _set_sort(self, mode: str) -> None:
@@ -1164,7 +1180,11 @@ class MuralWindow(Adw.ApplicationWindow):
             self.settings.add_to_slideshow(path, connector)
             msg = f"{_('Added to slideshow')}: {Path(path).name}"
 
-        self._schedule_save()
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+        else:
+            self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
         self._status(msg)
@@ -1191,7 +1211,11 @@ class MuralWindow(Adw.ApplicationWindow):
             if len(self.settings.resolve_slideshow_playlist(connector)) > before:
                 added += 1
 
-        self._schedule_save()
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+        else:
+            self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
         self._status(f"{added} {_('images added from folder')}: {self.folder.name}")
@@ -1205,7 +1229,11 @@ class MuralWindow(Adw.ApplicationWindow):
             if p.startswith(folder_prefix + os.sep):
                 self.settings.remove_from_slideshow(p, connector)
         removed = before - len(self.settings.resolve_slideshow_playlist(connector))
-        self._schedule_save()
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self.config.save(self.settings)
+            self._daemon.reload_config()
+        else:
+            self._schedule_save()
         self._refresh_active_indicators()
         self._update_slideshow_count_label()
         self._status(f"{removed} {_('images removed from folder')}: {self.folder.name}")
@@ -2142,6 +2170,10 @@ class MuralWindow(Adw.ApplicationWindow):
                 self.settings.window_width = w
                 self.settings.window_height = h
         self.config.save(self.settings)
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self._daemon.reload_config()
+            if self.settings.slideshow_enabled:
+                self._daemon.set_slideshow_enabled(True)
         return False
 
 class MuralApplication(Adw.Application):
