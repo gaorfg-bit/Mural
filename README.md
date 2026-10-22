@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="850">
+  <img src="assets/logo.png" width="850" alt="Mural logo">
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 <hr>
 
 <p align="center">
-  <img src="assets/Mural.png" width="900">
+  <img src="assets/Mural.png" width="900" alt="Mural screenshot">
 </p>
 
 <hr>
