@@ -21,8 +21,14 @@
 
 <pre><code>git clone https://github.com/gaorfg-bit/mural
 cd mural
-pip install -r requirements.txt
 ./install.sh</code></pre>
+
+<p><em>Pillow is already provided by python3-pil (Step 1). pip is only needed for the optional
+AVIF gallery support — reading existing .avif files:</em></p>
+
+<pre><code>pip install --user --break-system-packages pillow-avif-plugin</code></pre>
+
+<p><em>(AVIF conversion itself uses ImageMagick, installed by your distribution.)</em></p>
 
 <p><strong>Uninstall:</strong></p>
 

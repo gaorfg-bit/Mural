@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, Future
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -54,9 +55,17 @@ def _find_imagemagick() -> Optional[str]:
     return None
 
 
+# Détection paresseuse (lru_cache) : les deux subprocess de détection
+# ne tournent plus au chargement du module mais au premier usage réel.
+@lru_cache(maxsize=1)
+def imagemagick_cmd() -> Optional[str]:
+    return _find_imagemagick()
+
+
+@lru_cache(maxsize=1)
 def avif_supported() -> bool:
     """Checks if ImageMagick is available and supports AVIF."""
-    cmd = _find_imagemagick()
+    cmd = imagemagick_cmd()
     if not cmd:
         return False
     try:
@@ -68,15 +77,6 @@ def avif_supported() -> bool:
         return "AVIF" in out.upper()
     except Exception:
         return False
-
-
-# Evaluated once at module load
-AVIF_SUPPORTED = avif_supported()
-_IMAGEMAGICK_CMD = _find_imagemagick() if AVIF_SUPPORTED else None
-
-logger.debug(
-    "AVIF support: %s (cmd: %s)", AVIF_SUPPORTED, _IMAGEMAGICK_CMD
-)
 
 
 def cache_dir_for(folder: Path) -> Path:
@@ -135,7 +135,7 @@ class FolderConverter:
           on_progress(converted, total, current_filename)
           on_done(converted, total)
         """
-        if not AVIF_SUPPORTED:
+        if not avif_supported():
             logger.warning("ImageMagick not available — conversion impossible")
             if on_done:
                 GLib.idle_add(on_done, 0, 0)
@@ -209,7 +209,8 @@ class FolderConverter:
 
     def _convert_one(self, original: Path) -> bool:
         """Converts a file via ImageMagick. Runs in ThreadPoolExecutor."""
-        if not _IMAGEMAGICK_CMD:
+        cmd = imagemagick_cmd()
+        if not cmd:
             return False
 
         dest = avif_path_for(original)
@@ -225,7 +226,7 @@ class FolderConverter:
         try:
             result = subprocess.run(
                 [
-                    _IMAGEMAGICK_CMD,
+                    cmd,
                     str(original),
                     "-quality", str(AVIF_QUALITY),
                     "-define", "heic:speed=6",  # fast encode

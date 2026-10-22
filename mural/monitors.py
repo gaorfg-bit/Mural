@@ -41,6 +41,13 @@ class MonitorDetector:
                 if connector:
                     name = f"{name} ({connector})"
 
+                # GTK 4.10+ expose is_primary() ; avant, on suppose que le
+                # premier moniteur est le primaire.
+                try:
+                    primary = bool(mon.is_primary())
+                except Exception:
+                    primary = (i == 0)
+
                 monitors.append(MonitorInfo(
                     name=name,
                     connector=connector or f"output-{i}",
@@ -48,7 +55,7 @@ class MonitorDetector:
                     height=geo.height,
                     x=geo.x,
                     y=geo.y,
-                    primary=(i == 0),
+                    primary=primary,
                     serial=f"{i}",
                 ))
                 logger.debug(

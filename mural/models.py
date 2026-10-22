@@ -21,33 +21,49 @@ class WallpaperSettings:
     folder: str = ""
     mode: str = "zoom"
     lock_screen: bool = True
-    dark_mode: bool = True
     per_monitor: Dict[str, str] = field(default_factory=dict)
-    paned_position: Optional[int] = None
     window_width: int = 1280
     window_height: int = 800
     window_maximized: bool = False
     slideshow_enabled: bool = False
     slideshow_interval: int = 10
     slideshow_random: bool = True
-    slideshow_folders: List[str] = field(default_factory=list)
     slideshow_images: List[str] = field(default_factory=list)
     slideshow_images_per_monitor: Dict[str, List[str]] = field(default_factory=dict)
-    slideshow_excluded: List[str] = field(default_factory=list)
     slideshow_monitors: List[str] = field(default_factory=list)
     folder_bookmarks: List[str] = field(default_factory=list)
     monitor_folders: Dict[str, str] = field(default_factory=dict)
     avif_use_for_gnome: bool = False  # Serve AVIF to GNOME if available
-    spanned_banner_dismissed: bool = False
     same_image_on_all: bool = False  # Default: independent per monitor
     last_seen_version: str = ""  # Last version for which "What's new" was shown
+
+    # Champs conteneurs : une vieille config peut les stocker au mauvais
+    # type (ex. une chaîne là où une liste est attendue) — from_dict
+    # répare silencieusement plutôt que de laisser un `in` sur une string
+    # produire des bugs incohérents plus loin.
+    _CONTAINER_LIST = {"slideshow_images", "slideshow_monitors", "folder_bookmarks"}
+    _CONTAINER_DICT = {"per_monitor", "slideshow_images_per_monitor", "monitor_folders"}
 
     def to_dict(self):
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d):
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        if not isinstance(d, dict):
+            d = {}
+        fields = cls.__dataclass_fields__
+        kwargs = {k: v for k, v in d.items() if k in fields}
+        for k in cls._CONTAINER_LIST:
+            v = kwargs.get(k)
+            if isinstance(v, str):
+                kwargs[k] = [v]
+            elif v is not None and not isinstance(v, list):
+                kwargs[k] = []
+        for k in cls._CONTAINER_DICT:
+            v = kwargs.get(k)
+            if v is not None and not isinstance(v, dict):
+                kwargs[k] = {}
+        return cls(**kwargs)
 
     def _clean_existing_paths(self, paths: List[str]) -> List[str]:
         cleaned: List[str] = []

@@ -1,2 +1,10 @@
+# Mural ne dépend que de Pillow, déjà fourni par python3-pil (étape 1 du
+# README). pip n'est utile que si python3-pil est absent ou trop ancien :
 Pillow>=10.0.0
-pillow-avif-plugin>=1.4.3
+
+# Optionnel — lecture des fichiers .avif existants dans la galerie.
+# (La CONVERSION AVIF, elle, passe par ImageMagick, installé par la
+#  distribution ; ce plugin ne sert qu'à ouvrir des .avif déjà présents.)
+# Décommentez et installez avec :
+#   pip install --user --break-system-packages pillow-avif-plugin
+# pillow-avif-plugin>=1.4.3
