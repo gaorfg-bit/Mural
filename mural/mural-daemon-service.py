@@ -18,8 +18,10 @@ from gi.repository import GLib, Gio
 
 try:
     from mural.io_utils import atomic_save_json, ensure_private_dir, load_json, locked_file
+    from mural.wallpaper_ops import apply_composite, set_gnome_background
 except Exception:
     from io_utils import atomic_save_json, ensure_private_dir, load_json, locked_file
+    from wallpaper_ops import apply_composite, set_gnome_background
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,6 @@ logger = logging.getLogger("mural-daemon")
 # ── Config ────────────────────────────────────────────────────────────────────
 
 CONFIG_FILE = Path.home() / ".config" / "mural" / "settings.json"
-CACHE_DIR = Path(GLib.get_user_cache_dir()) / "mural"
 
 def load_config() -> dict:
     ensure_private_dir(CONFIG_FILE.parent)
@@ -58,6 +59,31 @@ def save_config(cfg: dict):
             atomic_save_json(CONFIG_FILE, cfg, mode=0o600)
     except Exception as e:
         logger.error("Failed to save config: %s", e)
+
+
+def update_config(updates: dict) -> None:
+    """Read-modify-write ciblé de la config.
+
+    Recharge le fichier frais sous le verrou, applique uniquement `updates`
+    puis sauve. Évite le « lost update » historique : le daemon écrasait
+    tout settings.json avec son snapshot mémoire, effaçant les changements
+    que l'app venait d'écrire (bookmarks, dossier courant, etc.).
+    """
+    ensure_private_dir(CONFIG_FILE.parent)
+    try:
+        with locked_file(CONFIG_FILE):
+            fresh: dict = {}
+            if CONFIG_FILE.exists():
+                try:
+                    fresh = load_json(CONFIG_FILE)
+                except Exception:
+                    fresh = {}
+            if not isinstance(fresh, dict):
+                fresh = {}
+            fresh.update(updates)
+            atomic_save_json(CONFIG_FILE, fresh, mode=0o600)
+    except Exception as e:
+        logger.error("Failed to update config: %s", e)
 
 # ── Monitor detection (without GDK — uses Mutter D-Bus) ──────────────────────
 
@@ -103,73 +129,35 @@ def detect_monitors_fallback() -> list:
 # ── Wallpaper apply ───────────────────────────────────────────────────────────
 
 def apply_wallpaper(path: str):
-    """Applies wallpaper via gsettings (single image, works without composite)."""
-    import subprocess
-    uri = Path(path).as_uri()
-    cmds = [
-        ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri],
-        ["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", uri],
-        ["gsettings", "set", "org.gnome.desktop.background", "picture-options", "zoom"],
-    ]
-    for cmd in cmds:
-        try:
-            subprocess.run(cmd, check=False)
-        except Exception as e:
-            logger.warning("gsettings failed: %s", e)
+    """Applique une image unique via gsettings (même fond partout)."""
+    set_gnome_background(Path(path).as_uri())
     logger.info("Applied wallpaper: %s", path)
 
 def apply_wallpaper_composite(path: str, cfg: dict):
-    """Tries composite multi-monitor apply, falls back to single."""
+    """Applique le composite multi-moniteurs, avec repli sur une image unique."""
     try:
-        from PIL import Image
-        import hashlib
-
         monitors_raw = detect_monitors_fallback()
         if len(monitors_raw) <= 1:
             apply_wallpaper(path)
             return
 
-        per_monitor = cfg.get("per_monitor", {})
-        min_x = min(m["x"] for m in monitors_raw)
-        min_y = min(m["y"] for m in monitors_raw)
-        max_x = max(m["x"] + m["width"] for m in monitors_raw)
-        max_y = max(m["y"] + m["height"] for m in monitors_raw)
-
-        canvas = Image.new("RGB", (max_x - min_x, max_y - min_y), (0, 0, 0))
-
+        per_monitor = cfg.get("per_monitor", {}) or {}
+        assignments = {}
         for mon in monitors_raw:
-            img_path = per_monitor.get(mon["connector"], path)
-            if not img_path or not os.path.exists(img_path):
-                img_path = path
+            img_path = per_monitor.get(mon["connector"]) or path
             if not os.path.exists(img_path):
-                continue
+                img_path = path
+            if img_path and os.path.exists(img_path):
+                assignments[mon["connector"]] = img_path
 
-            with Image.open(img_path) as img:
-                img_ratio = img.width / img.height
-                mon_ratio = mon["width"] / mon["height"]
-                if img_ratio > mon_ratio:
-                    new_h = mon["height"]
-                    new_w = int(new_h * img_ratio)
-                else:
-                    new_w = mon["width"]
-                    new_h = int(new_w / img_ratio)
-
-                img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                left = (new_w - mon["width"]) // 2
-                top = (new_h - mon["height"]) // 2
-                img_cropped = img_resized.crop((left, top, left + mon["width"], top + mon["height"]))
-                canvas.paste(img_cropped, (mon["x"] - min_x, mon["y"] - min_y))
-
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        img_hash = hashlib.md5(canvas.tobytes()).hexdigest()[:10]
-        final_path = CACHE_DIR / f"mural_universal_{img_hash}.png"
-
-        for old in CACHE_DIR.glob("mural_universal_*.png"):
-            try: old.unlink()
-            except: pass
-
-        canvas.save(final_path, "PNG")
-        apply_wallpaper(str(final_path))
+        geoms = [
+            (m["connector"], m["x"], m["y"], m["width"], m["height"])
+            for m in monitors_raw
+        ]
+        if apply_composite(assignments, geoms) is None:
+            apply_wallpaper(path)
+        else:
+            logger.info("Applied composite: %s", path)
 
     except Exception as e:
         logger.warning("Composite failed, falling back to single: %s", e)
@@ -218,6 +206,12 @@ class MuralDaemon:
         self._wallpaper_rate_limit: float = 0.5
 
         self._reload_config()
+        # Restaure le wallpaper courant depuis la config : sans cela,
+        # GetCurrentWallpaper renvoie "" jusqu'au premier changement et
+        # l'UI ne peut pas se resynchroniser au démarrage.
+        self._current_wallpaper = next(
+            iter((self._cfg.get("per_monitor") or {}).values()), ""
+        )
         self._start_slideshow_if_needed()
 
     def _get_sender_uid(self, connection: Gio.DBusConnection, sender: str) -> Optional[int]:
@@ -252,13 +246,16 @@ class MuralDaemon:
                     self._cfg.get("slideshow_enabled"), self._cfg.get("slideshow_interval", 10))
 
     def _get_playlist(self, connector: Optional[str] = None) -> List[str]:
+        """Playlist du moniteur, sans repli implicite sur la liste globale.
+
+        Aligné sur WallpaperSettings.resolve_slideshow_playlist (mode
+        « 100 % manuel ») : un moniteur sans favoris dédiés ne joue rien,
+        au lieu de jouer la liste globale — l'ancien désaccord faisait
+        diverger le slideshow selon que le daemon tournait ou non.
+        """
         if connector:
             per_monitor = self._cfg.get("slideshow_images_per_monitor", {}) or {}
             images = per_monitor.get(connector, [])
-            # Fallback to global playlist so daemon slideshow keeps running
-            # even when no monitor-specific favorites are configured.
-            if not images:
-                images = self._cfg.get("slideshow_images", [])
         else:
             images = self._cfg.get("slideshow_images", [])
         return [p for p in images if Path(p).exists()]
@@ -278,7 +275,28 @@ class MuralDaemon:
             self._slideshow_timeout_id = None
             logger.info("Slideshow stopped")
 
+    def _restart_slideshow_timer(self) -> None:
+        """Reprogramme le timer avec l'intervalle courant (stop + start)."""
+        self._stop_slideshow()
+        self._start_slideshow_if_needed()
+
+    def _sync_slideshow_runtime(self, old_enabled: bool, old_interval: int) -> None:
+        """Applique un éventuel changement d'état/intervalle après rechargement."""
+        new_enabled = bool(self._cfg.get("slideshow_enabled", False))
+        new_interval = int(self._cfg.get("slideshow_interval", 10) or 10)
+        if not new_enabled:
+            self._stop_slideshow()
+        elif (
+            (not old_enabled)
+            or (new_interval != old_interval)
+            or (self._slideshow_timeout_id is None)
+        ):
+            self._restart_slideshow_timer()
+
     def _tick(self) -> bool:
+        # Toujours repartir d'une config fraîche : l'app peut avoir écrit
+        # entre deux ticks (playlist, favoris par moniteur, etc.).
+        self._reload_config()
         monitors = detect_monitors_fallback()
         target_connectors = self._cfg.get("slideshow_monitors") or [m["connector"] for m in monitors]
         per_monitor = dict(self._cfg.get("per_monitor", {}))
@@ -302,20 +320,28 @@ class MuralDaemon:
             return True
 
         self._cfg["per_monitor"] = per_monitor
-        save_config(self._cfg)
+        # Écriture ciblée : ne jamais réécrire tout le fichier depuis un
+        # snapshot mémoire (perte des changements faits par l'app).
+        update_config({"per_monitor": per_monitor})
+        self._current_wallpaper = next(iter(per_monitor.values()), "")
         apply_wallpaper_composite(next(iter(per_monitor.values()), ""), self._cfg)
         return True
 
     def _apply(self, path: str):
+        """SetWallpaper : cette image devient le fond de tous les écrans.
+
+        On assigne les moniteurs DÉTECTÉS sans effacer d'éventuelles clés
+        existantes : si Mutter ne répond pas (détection dégradée sur
+        « default »), on ne détruit pas un mapping multi-écrans valide.
+        """
         self._current_wallpaper = path
-        # Keep existing per-monitor assignments when available.
-        per_monitor = dict(self._cfg.get("per_monitor", {}))
-        if not per_monitor:
-            monitors = detect_monitors_fallback()
-            for mon in monitors:
-                per_monitor[mon["connector"]] = path
-            self._cfg["per_monitor"] = per_monitor
-        save_config(self._cfg)
+        self._reload_config()
+        monitors = detect_monitors_fallback()
+        per_monitor = dict(self._cfg.get("per_monitor") or {})
+        for mon in monitors:
+            per_monitor[mon["connector"]] = path
+        self._cfg["per_monitor"] = per_monitor
+        update_config({"per_monitor": per_monitor})
         apply_wallpaper_composite(path, self._cfg)
 
     def _set_config_json(self, json_str: str) -> bool:
@@ -331,21 +357,7 @@ class MuralDaemon:
 
         save_config(data)
         self._reload_config()
-
-        new_enabled = bool(self._cfg.get("slideshow_enabled", False))
-        new_interval = int(self._cfg.get("slideshow_interval", 10) or 10)
-
-        if not new_enabled:
-            self._stop_slideshow()
-        else:
-            needs_restart = (
-                self._slideshow_timeout_id is None
-                or (not old_enabled)
-                or (new_interval != old_interval)
-            )
-            if needs_restart:
-                self._stop_slideshow()
-                self._start_slideshow_if_needed()
+        self._sync_slideshow_runtime(old_enabled, old_interval)
 
         return True
 
@@ -366,8 +378,11 @@ class MuralDaemon:
 
             elif method == "NextWallpaper":
                 self._tick()
-                if self._slideshow_timeout_id is not None:
-                    self._start_slideshow_if_needed()
+                if self._cfg.get("slideshow_enabled"):
+                    # Repartir d'un compte à rebours complet après un
+                    # déclenchement manuel (l'ancien code appelait un
+                    # _start_slideshow_if_needed() qui était un no-op).
+                    self._restart_slideshow_timer()
                 invocation.return_value(None)
 
             elif method == "SetWallpaper":
@@ -388,7 +403,7 @@ class MuralDaemon:
             elif method == "ToggleSlideshow":
                 enabled = not self._cfg.get("slideshow_enabled", False)
                 self._cfg["slideshow_enabled"] = enabled
-                save_config(self._cfg)
+                update_config({"slideshow_enabled": enabled})
                 if enabled:
                     self._start_slideshow_if_needed()
                 else:
@@ -398,7 +413,7 @@ class MuralDaemon:
             elif method == "SetSlideshowEnabled":
                 enabled = params.unpack()[0]
                 self._cfg["slideshow_enabled"] = enabled
-                save_config(self._cfg)
+                update_config({"slideshow_enabled": enabled})
                 if enabled:
                     self._start_slideshow_if_needed()
                 else:
@@ -411,8 +426,13 @@ class MuralDaemon:
                 invocation.return_value(GLib.Variant("(b)", (ok,)))
 
             elif method == "ReloadConfig":
+                old_enabled = bool(self._cfg.get("slideshow_enabled", False))
+                old_interval = int(self._cfg.get("slideshow_interval", 10) or 10)
                 self._reload_config()
-                self._start_slideshow_if_needed()
+                # Un changement d'intervalle doit réellement reprogrammer
+                # le timer : c'était l'angle mort (ReloadConfig ne faisait
+                # que recharger, le timer gardait l'ancien rythme).
+                self._sync_slideshow_runtime(old_enabled, old_interval)
                 invocation.return_value(None)
 
             else:
