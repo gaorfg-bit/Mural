@@ -73,6 +73,7 @@ ExecStart=/usr/bin/env python3 %h/.local/share/mural/mural/mural-daemon-service.
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=%h/.local/share/mural
 StandardOutput=journal
 StandardError=journal
 
@@ -80,8 +81,13 @@ StandardError=journal
 WantedBy=graphical-session.target
 EOF
 
-systemctl --user daemon-reload
-systemctl --user enable --now mural.service
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl --user enable --now mural.service 2>/dev/null \
+    || echo "Warning: systemd user session unavailable — daemon not started (slideshow runs only while the app is open)."
+else
+  echo "Warning: systemd not found — daemon skipped (slideshow runs only while the app is open)."
+fi
 
 echo "Refreshing GNOME..."
 update-desktop-database "$APP_DIR" 2>/dev/null || true

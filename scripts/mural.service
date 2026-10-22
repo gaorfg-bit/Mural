@@ -1,3 +1,6 @@
+# Référence : install.sh génère ce fichier dans ~/.config/systemd/user/mural.service
+# (avec %h résolu vers votre home). Ne pas installer cette copie telle quelle
+# pour une installation utilisateur — elle documente l'unit produite.
 [Unit]
 Description=Mural Wallpaper Daemon
 Documentation=https://github.com/gaorfg-bit/mural
@@ -6,10 +9,11 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/share/mural/mural/mural-daemon-service.py
+ExecStart=/usr/bin/env python3 %h/.local/share/mural/mural/mural-daemon-service.py
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=%h/.local/share/mural
 StandardOutput=journal
 StandardError=journal
 
