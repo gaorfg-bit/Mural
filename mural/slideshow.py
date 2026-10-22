@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -56,7 +57,6 @@ class SlideshowManager:
                 # No dedicated favorites for this monitor: keep current image.
                 continue
             if self._app.settings.slideshow_random:
-                import random
                 chosen = random.choice(playlist)
             else:
                 idx = self._sequential_index_per_monitor.get(connector, 0) % len(playlist)
@@ -70,8 +70,10 @@ class SlideshowManager:
 
         self._app.settings.per_monitor = assignments
 
-        # 2. SAVE to disk
-        self._app._persist_settings()
+        # 2. SAVE to disk (la méthode _persist_settings n'existe pas :
+        # l'ancien appel levait une AttributeError au premier tick, ce qui
+        # supprimait la source GLib et arrêtait le slideshow local.)
+        self._app._schedule_save()
 
         # 3. Apply visually
         threading.Thread(
