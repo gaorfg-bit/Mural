@@ -33,6 +33,9 @@ class Thumbnailer:
                 if hasattr(img, "draft"):
                     img.draft("RGB", (tw * 2, th * 2))
 
+                # Respecter l'orientation EXIF (JPEG d'appareil photo)
+                img = ImageOps.exif_transpose(img)
+
                 if img.mode in ("RGBA", "LA", "PA"):
                     bg = Image.new("RGB", img.size, (40, 40, 40))
                     bg.paste(img, mask=img.split()[-1])
@@ -91,6 +94,9 @@ class ImageLoader:
                 if hasattr(img, "draft"):
                     img.draft("RGB", (max_w, max_h))
 
+                # Respecter l'orientation EXIF (JPEG d'appareil photo)
+                img = ImageOps.exif_transpose(img)
+
                 has_alpha = img.mode in ("RGBA", "LA", "PA")
                 if has_alpha:
                     img = img.convert("RGBA")
@@ -116,7 +122,9 @@ class ImageLoader:
         path: str, target_w: int, target_h: int, mode: str
     ) -> Optional[Image.Image]:
         try:
-            img = Image.open(path).convert("RGB")
+            with Image.open(path) as src:
+                # Respecter l'orientation EXIF avant tout redimensionnement
+                img = ImageOps.exif_transpose(src).convert("RGB")
             if mode in ("zoom", "scaled"):
                 ratio = max(target_w / img.width, target_h / img.height)
                 nw = int(img.width * ratio)
