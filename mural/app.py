@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import traceback
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -33,16 +34,17 @@ from mural.daemon import MuralDaemonProxy
 from mural.monitors import MonitorDetector
 from mural.slideshow import SlideshowManager
 from mural.thumbnails import ImageLoader, Thumbnailer
-from mural.avif_cache import get_cached_avif, AVIF_SUPPORTED
+from mural.avif_cache import get_cached_avif, avif_supported
 
+_LOG_LEVEL = logging.DEBUG if os.environ.get("MURAL_DEBUG") else logging.INFO
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=_LOG_LEVEL,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stderr)],
 )
 
 logger = logging.getLogger("wallpaper")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(_LOG_LEVEL)
 
 # --- Multilingual Configuration ---
 APP_NAME = "mural"
@@ -141,7 +143,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.monitors = MonitorDetector.detect()
         self.current_monitor = 0
         self.selected_image: Optional[str] = None
-        self._texture_cache: Dict[str, Gdk.Texture] = {}
+        self._texture_cache: Dict[str, Gdk.Texture] = OrderedDict()
         self._selected_path: Optional[str] = None
         self._stop_event = threading.Event()
         self.gallery_generation = 0
@@ -195,6 +197,13 @@ class MuralWindow(Adw.ApplicationWindow):
             logger.info("Daemon detected; slideshow handled by daemon")
         elif self.settings.slideshow_enabled:
             self.slideshow.start()
+
+        # Détection AVIF (deux subprocess) différée : ne bloque pas le
+        # premier rendu, et ne tourne pas si l'utilisateur n'y touche pas.
+        GLib.idle_add(self._start_avif_check)
+        # Refléter l'état du daemon au démarrage (wallpaper courant).
+        if self._daemon.available:
+            GLib.idle_add(self._sync_ui_from_daemon)
 
     def _build_ui(self):
         hb = Gtk.HeaderBar()
@@ -570,7 +579,7 @@ class MuralWindow(Adw.ApplicationWindow):
         b_ss.append(self.lbl_slideshow_count)
         btn_next = Gtk.Button(label=_("Next image now"))
         btn_next.add_css_class("flat")
-        btn_next.connect("clicked", lambda *_: self.slideshow.next())
+        btn_next.connect("clicked", self._on_next_image)
         b_ss.append(btn_next)
 
         bulk_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -659,7 +668,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self._avif_stats_label.add_css_class("dim-label")
         self._avif_stats_label.set_margin_start(12); self._avif_stats_label.set_margin_top(6)
         self._avif_stats_label.set_margin_bottom(2); self._avif_stats_label.set_wrap(True)
-        self._avif_stats_label.set_text(_("AVIF unavailable — install imagemagick") if not AVIF_SUPPORTED else _("No info"))
+        self._avif_stats_label.set_text(_("Checking…"))
         _sr = Adw.PreferencesRow(); _sr.set_child(self._avif_stats_label); g_avif.add(_sr)
         self._avif_progress_bar = Gtk.ProgressBar()
         self._avif_progress_bar.set_hexpand(True)
@@ -680,14 +689,14 @@ class MuralWindow(Adw.ApplicationWindow):
         self.btn_avif_convert = Gtk.Button(label=_("Convert this folder"))
         self.btn_avif_convert.add_css_class("suggested-action")
         self.btn_avif_convert.set_hexpand(True)
-        self.btn_avif_convert.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_convert.set_sensitive(False)
         self.btn_avif_convert.connect("clicked", self._on_avif_convert)
         self.btn_avif_cancel = Gtk.Button(label=_("Cancel"))
         self.btn_avif_cancel.set_visible(False)
         self.btn_avif_cancel.connect("clicked", lambda *_: self.avif_converter.cancel())
         self.btn_avif_purge = Gtk.Button(label=_("Purge"))
         self.btn_avif_purge.add_css_class("destructive-action")
-        self.btn_avif_purge.set_sensitive(AVIF_SUPPORTED)
+        self.btn_avif_purge.set_sensitive(False)
         self.btn_avif_purge.connect("clicked", self._on_avif_purge)
         avif_bb.append(self.btn_avif_convert); avif_bb.append(self.btn_avif_cancel); avif_bb.append(self.btn_avif_purge)
         _abr = Adw.PreferencesRow(); _abr.set_child(avif_bb); g_avif.add(_abr)
@@ -695,7 +704,7 @@ class MuralWindow(Adw.ApplicationWindow):
         self.switch_avif_gnome = Gtk.Switch()
         self.switch_avif_gnome.set_active(self.settings.avif_use_for_gnome)
         self.switch_avif_gnome.set_valign(Gtk.Align.CENTER)
-        self.switch_avif_gnome.set_sensitive(AVIF_SUPPORTED)
+        self.switch_avif_gnome.set_sensitive(False)
         self.switch_avif_gnome.connect("notify::active", self._on_avif_gnome_toggle)
         ag_row.add_suffix(self.switch_avif_gnome)
         ag_row.set_activatable_widget(self.switch_avif_gnome)
@@ -719,6 +728,27 @@ class MuralWindow(Adw.ApplicationWindow):
         if active and self.selected_image:
             for mon in self.monitors:
                 self.settings.per_monitor[mon.connector] = self.selected_image
+
+    def _start_avif_check(self) -> bool:
+        """Vérifie ImageMagick/AVIF hors thread UI, puis met l'UI à jour."""
+        def _check():
+            supported = avif_supported()
+            GLib.idle_add(self._apply_avif_availability, supported)
+        threading.Thread(target=_check, daemon=True).start()
+        return False
+
+    def _apply_avif_availability(self, supported: bool) -> bool:
+        if supported:
+            self._avif_stats_label.set_text(_("No info"))
+            self.btn_avif_convert.set_sensitive(True)
+            self.btn_avif_purge.set_sensitive(True)
+            self.switch_avif_gnome.set_sensitive(True)
+        else:
+            self._avif_stats_label.set_text(_("AVIF unavailable — install imagemagick"))
+            self.btn_avif_convert.set_sensitive(False)
+            self.btn_avif_purge.set_sensitive(False)
+            self.switch_avif_gnome.set_sensitive(False)
+        return False
 
     def _on_avif_convert(self, *_ignored) -> None:
         if self.avif_converter.is_running():
@@ -814,14 +844,9 @@ class MuralWindow(Adw.ApplicationWindow):
             logger.warning("Sync daemon failed: %s", e)
 
     def _ensure_menu_actions(self):
-        if getattr(self, "_primary_menu", None):
+        if getattr(self, "_menu_actions_done", False):
             return
-        self._primary_menu = Gio.Menu()
-        self._primary_menu.append(_("Import…"), "win.import")
-        self._primary_menu.append(_("Remove"), "win.remove")
-
-        noop = Gio.SimpleAction.new("noop", None)
-        self.get_application().add_action(noop)
+        self._menu_actions_done = True
 
         self._register_action("thumb_set", self._on_thumb_set, None)
         self._register_action("thumb_reveal", self._on_thumb_reveal, None)
@@ -829,7 +854,6 @@ class MuralWindow(Adw.ApplicationWindow):
         self._register_action("thumb_slideshow_toggle", self._on_thumb_slideshow_toggle, "<Primary>D")
         self._register_action("thumb_delete_disk", self._on_thumb_delete_disk, None)
         self._register_action("import", self._menu_import, "<Primary>O")
-        self._register_action("remove", self._menu_remove, "Delete")
         self._register_action("refresh", lambda *_: self._load_gallery(), "<Primary>R")
         self._register_action("clear_cache", self._on_clear_cache, None)
         self._register_action("about", self._on_about, None)
@@ -886,9 +910,6 @@ class MuralWindow(Adw.ApplicationWindow):
 
     def _menu_import(self, action, param):
         self._on_choose_folder(None)
-
-    def _menu_remove(self, action, param):
-        self._status(_("Action {} not implemented").format(action.get_name()))
 
     def _monitor_markup(self, idx: int) -> str:
         m = self.monitors[idx]
@@ -1061,6 +1082,18 @@ class MuralWindow(Adw.ApplicationWindow):
         if child:
             child.set_state_flags(Gtk.StateFlags.SELECTED, False)
 
+    def _on_next_image(self, *_ignored) -> None:
+        """« Next image now » : confier le changement au daemon si actif.
+
+        Le slideshow local est arrêté quand le daemon gère la rotation ;
+        l'ancien appel lançait quand même une application locale en
+        parallèle (double travail, listes désynchronisées).
+        """
+        if getattr(self, "_daemon", None) and self._daemon.available:
+            self._daemon.next_wallpaper()
+        else:
+            self.slideshow.next()
+
     def _on_slideshow_toggle(self, switch, _param) -> None:
         enabled = switch.get_active()
         self.settings.slideshow_enabled = enabled
@@ -1134,23 +1167,29 @@ class MuralWindow(Adw.ApplicationWindow):
             self.thumb_menu.set_parent(parent)
         self.thumb_menu.popup()
 
+    def _child_for_path(self, path: str) -> Optional[Gtk.FlowBoxChild]:
+        for child, p in self._child_to_path.items():
+            if p == path:
+                return child
+        return None
+
     def _on_thumb_set(self, action, param):
+        """Clic droit « Set as background » : même chemin que le bouton Apply.
+
+        L'ancien chemin passait par le daemon, qui ne mettait pas à jour
+        per_monitor en multi-écrans : l'image ne s'appliquait qu'aux écrans
+        encore non assignés.
+        """
         path = self._context_path
         if not path or not Path(path).exists():
             return
-        mode = self.mode_ids[self.mode_dropdown.get_selected()]
-        lock = self.chk_lock.get_active()
-        if getattr(self, "_daemon", None) and self._daemon.available:
-            ok = self._daemon.set_wallpaper(path)
-            if not ok:
-                self._status(_("Daemon failed — local fallback"))
-                ok = self.backend.apply_single(path, mode, lock)
-        else:
-            ok = self.backend.apply_single(path, mode, lock)
-        if ok:
-            self._status(f"{_('Applied')}: {Path(path).name} ({mode})")
-        else:
-            self._status(_("Application error"))
+        child = self._child_for_path(path)
+        if child:
+            self.flowbox.handler_block_by_func(self._on_flowbox_selection_changed)
+            self.flowbox.select_child(child)
+            self.flowbox.handler_unblock_by_func(self._on_flowbox_selection_changed)
+        self._set_selected_image(path, child)
+        self._on_apply(None)
 
     def _on_thumb_reveal(self, action, param):
         path = self._context_path
@@ -1485,6 +1524,13 @@ class MuralWindow(Adw.ApplicationWindow):
         self.add_controller(controller)
 
     def _on_key_shortcut(self, controller, keyval, keycode, state):
+        # Ne pas confisquer l'espace/Entrée à un champ de saisie
+        # (recherche, etc.) : l'ancien handler ouvrait la preview plein
+        # écran ou déclenchait Apply en pleine frappe.
+        focus = self.get_focus()
+        if isinstance(focus, (Gtk.Entry, Gtk.TextView)):
+            return False
+
         # Enter: apply selected wallpaper
         if keyval == Gdk.KEY_Return or keyval == Gdk.KEY_KP_Enter:
             if self.btn_apply.get_sensitive():
@@ -1705,11 +1751,7 @@ class MuralWindow(Adw.ApplicationWindow):
             self._update_image_info(assigned_path)
             self._preview_placeholder_label.set_visible(False)
 
-            target_child = None
-            for child, path in self._child_to_path.items():
-                if path == assigned_path:
-                    target_child = child
-                    break
+            target_child = self._child_for_path(assigned_path)
 
             # Disconnect signal to avoid re-triggering events
             self.flowbox.handler_block_by_func(self._on_flowbox_selection_changed)
@@ -1987,9 +2029,12 @@ class MuralWindow(Adw.ApplicationWindow):
             if stop_event.is_set() or generation != self.gallery_generation:
                 return
             
-            # 1. RAM Cache: If already loaded, use texture directly
-            if str(fpath) in self._texture_cache:
-                batch.append((fpath, self._texture_cache[str(fpath)]))
+            # 1. RAM Cache: If already loaded, use texture directly.
+            # `.get()` plutôt que `in` + `[]` : l'éviction LRU (main thread)
+            # peut retirer l'entrée entre les deux.
+            cached_tex = self._texture_cache.get(str(fpath))
+            if cached_tex is not None:
+                batch.append((fpath, cached_tex))
             else:
                 # 2. AVIF priority for source
                 avif = get_cached_avif(str(fpath))
@@ -2052,8 +2097,12 @@ class MuralWindow(Adw.ApplicationWindow):
                 texture = image_obj
             elif isinstance(image_obj, GdkPixbuf.Pixbuf):
                 texture = Gdk.Texture.new_for_pixbuf(image_obj)
-                # RAM caching for next time
+                # Cache borné (LRU simple) : les vignettes les plus
+                # anciennes sortent avant que la RAM ne grimpe sur un gros
+                # dossier. Aligne le code sur ce qu'annonce le changelog.
                 self._texture_cache[str(fpath)] = texture
+                while len(self._texture_cache) > Config.MAX_IMAGES:
+                    self._texture_cache.popitem(last=False)
             
             if texture:
                 picture.set_paintable(texture)
